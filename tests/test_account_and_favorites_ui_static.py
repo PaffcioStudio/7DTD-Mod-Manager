@@ -76,13 +76,22 @@ def test_steam_account_menu_has_real_logout_action_and_no_popup_dependency():
     assert 'onClicked: Qt.callLater(function() { header.accountRequested() })' in header
 
 
-def test_account_menu_is_hosted_by_header_and_anchored_to_account_button():
+def test_account_menu_is_clickable_and_anchored_under_account_button():
     main = (ROOT / "qml" / "Main.qml").read_text(encoding="utf-8")
     source = (ROOT / "qml" / "components" / "SteamAccountModal.qml").read_text(encoding="utf-8")
+    # header jest tylko punktem odniesienia dla pozycji
     assert 'menuParent: header' in main
-    assert 'parent: root.menuParent || Overlay.overlay' in source
-    assert 'accountAnchorRight(host)' in source
-    assert 'accountAnchorTopBoundary(root.menuParent || Overlay.overlay)' in source
-    assert 'return host.height' in source
-    assert 'accountAnchorBottom((root.menuParent || Overlay.overlay)) + 8' not in source
-    assert 'return root.anchorItem.mapToItem(host, root.anchorItem.width, 0).x' in source
+    # menu i warstwa zamykająca w tym samym rodzicu, menu nad warstwą
+    # (inaczej warstwa połyka kliknięcia w przyciski)
+    dismiss = source[source.index("id: accountDismissLayer"):source.index("id: accountMenu")]
+    menu = source[source.index("id: accountMenu"):source.index("ColumnLayout {")]
+    assert "parent: Overlay.overlay" in dismiss and "z: 9" in dismiss
+    assert "parent: Overlay.overlay" in menu and "z: 1090" in menu
+    assert "parent: root.menuParent" not in source
+    # pozycja przeliczana jawnie, bo mapToItem nie jest śledzone
+    assert "property int layoutTick: 0" in source
+    assert menu.count("root.layoutTick") >= 2
+    assert "accountAnchorRight(host)" in source
+    assert "accountAnchorTopBoundary(host)" in source
+    assert "return root.anchorItem.mapToItem(host, root.anchorItem.width, 0).x" in source
+    assert "root.menuParent.mapToItem(host, 0, root.menuParent.height).y" in source
