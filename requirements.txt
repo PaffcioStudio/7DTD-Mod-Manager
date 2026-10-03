@@ -1,0 +1,6 @@
+# 7 Days to Die - Mod Manager
+# Python dependencies (installed into a local virtual environment by ./venv.sh)
+PySide6>=6.6,<7.0
+requests
+Pillow
+pytest
