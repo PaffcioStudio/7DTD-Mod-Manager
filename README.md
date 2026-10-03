@@ -1,10 +1,39 @@
-# 7DTD Mod Manager
+# 7 Days To Die Mod Manager
 
 A Linux desktop launcher and mod manager for **7 Days to Die**, built with **Python, PySide6, and QML**.
 
 7DTD Mod Manager brings game-version control, isolated instances, mod installation, modpacks, overhauls, backups, downloads, updates, conflict detection, profiles, and online mod discovery into one desktop application.
 
-**Author:** Paffcio
+## Screenshots
+
+The repository includes English UI screenshots captured from the current application. They are kept in `docs/screenshots/` so the README stays self-contained.
+
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/dashboard-en.png" alt="Dashboard" width="100%"><br><sub>Dashboard</sub></td>
+<td align="center"><img src="docs/screenshots/mods-en.png" alt="Mod library" width="100%"><br><sub>Mod library</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/discover-en.png" alt="Discover" width="100%"><br><sub>Discover</sub></td>
+<td align="center"><img src="docs/screenshots/backups-en.png" alt="Backups" width="100%"><br><sub>Backups</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/updates-en.png" alt="Updates" width="100%"><br><sub>Updates</sub></td>
+<td align="center"><img src="docs/screenshots/downloads-en.png" alt="Downloads" width="100%"><br><sub>Downloads</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/profiles-en.png" alt="Profiles" width="100%"><br><sub>Profiles</sub></td>
+<td align="center"><img src="docs/screenshots/conflicts-en.png" alt="Conflicts" width="100%"><br><sub>Conflicts</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/settings-en.png" alt="Settings" width="100%"><br><sub>Settings</sub></td>
+<td align="center"><img src="docs/screenshots/drawer-en.png" alt="Mod details drawer" width="100%"><br><sub>Mod details drawer</sub></td>
+</tr>
+</table>
+
+The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clearer `backups-en.png` filename is used above for the Backups screen.
+
+**Author:** PaffcioStudio
 **Platform:** Linux
 **Current version:** 1.0.42
 **UI languages:** English and Polish
@@ -88,35 +117,6 @@ The header search can query installed mods, instances, and Discover results. Sug
 - Full English/Polish localization for pages, dialogs, buttons, tooltips, placeholders, statuses, notifications, and application-owned folder-picker text.
 - The language can be switched without restarting the launcher.
 
-## Screenshots
-
-The repository includes English UI screenshots captured from the current application. They are kept in `docs/screenshots/` so the README stays self-contained.
-
-<table>
-<tr>
-<td align="center"><img src="docs/screenshots/dashboard-en.png" alt="Dashboard" width="100%"><br><sub>Dashboard</sub></td>
-<td align="center"><img src="docs/screenshots/mods-en.png" alt="Mod library" width="100%"><br><sub>Mod library</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="docs/screenshots/discover-en.png" alt="Discover" width="100%"><br><sub>Discover</sub></td>
-<td align="center"><img src="docs/screenshots/backups-en.png" alt="Backups" width="100%"><br><sub>Backups</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="docs/screenshots/updates-en.png" alt="Updates" width="100%"><br><sub>Updates</sub></td>
-<td align="center"><img src="docs/screenshots/downloads-en.png" alt="Downloads" width="100%"><br><sub>Downloads</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="docs/screenshots/profiles-en.png" alt="Profiles" width="100%"><br><sub>Profiles</sub></td>
-<td align="center"><img src="docs/screenshots/conflicts-en.png" alt="Conflicts" width="100%"><br><sub>Conflicts</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="docs/screenshots/settings-en.png" alt="Settings" width="100%"><br><sub>Settings</sub></td>
-<td align="center"><img src="docs/screenshots/drawer-en.png" alt="Mod details drawer" width="100%"><br><sub>Mod details drawer</sub></td>
-</tr>
-</table>
-
-The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clearer `backups-en.png` filename is used above for the Backups screen.
-
 ## Requirements
 
 ### Runtime
@@ -142,7 +142,7 @@ Additional tools are only needed for specific workflows:
 
 The source repository can be downloaded without using Git for project versioning:
 
-1. Open the Paffcio GitHub repository page.
+1. Open the PaffcioStudio GitHub repository page.
 2. Select **Code**.
 3. Select **Download ZIP**.
 4. Extract the archive and enter the project directory.
@@ -306,5 +306,5 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Author
 
-**Paffcio**  
+**PaffcioStudio**
 https://github.com/paffciostudio
