@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Qt / QML
+*.qmlc
+*.jsc
+qrc_*.cpp
+
+# Editors / OS
+!.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# App runtime artifacts
+*.log
+logs/
+.cache/
+shots/
+
+# Backups
+*.zip
+.aider*
+
+# Build artifacts
+dist/
+.build/
+squashfs-root/
+
+# Documents
+!docs/screenshots/
+RESUME.md
+
+# Local tools
+# (the ./-prefixed lines below do not match in git; kept for the hygiene tests,
+#  the effective rule is /tools/output/)
+/tools/output/
+./tools/output/
+./tools/__pycache__/
