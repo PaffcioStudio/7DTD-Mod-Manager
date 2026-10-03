@@ -48,3 +48,4 @@ NOTATKI.md
 .mygitignore
 git-push.sh
 git-release.sh
+RELEASE_NOTES.md
