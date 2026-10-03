@@ -45,3 +45,6 @@ RESUME.md
 .vscode/
 NOTATKI.md
 .gitkeep
+.mygitignore
+git-push.sh
+git-release.sh
