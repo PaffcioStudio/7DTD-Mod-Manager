@@ -57,3 +57,44 @@ def test_major_only_slug_resolves_to_downloaded_patch_branch(tmp_path, monkeypat
     assert gv.resolve_downloaded_branch("v3") == ""
     _fake_branch(tmp_path, "latest_experimental")
     assert gv.resolve_downloaded_branch("v3") == "latest_experimental"
+
+
+def test_every_catalog_tab_resolves_to_downloaded_steam_branch(tmp_path, monkeypatch):
+    import backend.game_versions as gv
+
+    monkeypatch.setattr(gv, "versions_root", lambda: tmp_path)
+    for name in ("v1.4", "v2.6", "alpha17.4", "alpha18.4", "alpha19.6",
+                 "alpha20.7", "alpha21.2", "v3.0", "v3.1", "public"):
+        _fake_branch(tmp_path, name)
+    expected = {
+        "v1": "v1.4", "V2 Mods": "v2.6",
+        "alpha17": "alpha17.4", "Alpha 18": "alpha18.4",
+        "alpha19": "alpha19.6", "alpha20": "alpha20.7",
+        "Alpha 21": "alpha21.2",
+        "v3": "public", "v3.1": "v3.1",
+    }
+    for given, want in expected.items():
+        assert gv.resolve_downloaded_branch(given) == want, given
+    # alpha21 nie może trafić w inną alphę
+    (tmp_path / "alpha21.2" / "steam_appid.txt").unlink()
+    assert gv.resolve_downloaded_branch("alpha21") == ""
+    # v3 bez public -> numerowany, potem experimental
+    (tmp_path / "public" / "steam_appid.txt").unlink()
+    assert gv.resolve_downloaded_branch("v3") == "v3.1"
+
+
+def test_full_steam_branch_names_are_preserved(tmp_path, monkeypatch):
+    import backend.game_versions as gv
+
+    assert gv.required_game_branch("v3.2.0") == "v3.2.0"
+    assert gv.required_game_branch("v3.0.1") == "v3.0.1"
+    assert gv.required_game_branch("alpha21.2") == "alpha21.2"
+    assert gv.required_game_branch("V2 Mods") == "v2"
+
+    monkeypatch.setattr(gv, "versions_root", lambda: tmp_path)
+    for name in ("v3.0.1", "v3.1.0", "v3.2.0"):
+        _fake_branch(tmp_path, name)
+    assert gv.resolve_downloaded_branch("v3.1") == "v3.1.0"
+    assert gv.resolve_downloaded_branch("v3.0.1") == "v3.0.1"
+    # bez public: najnowszy numerowany
+    assert gv.resolve_downloaded_branch("v3") == "v3.2.0"

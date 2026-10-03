@@ -100,7 +100,7 @@ LEGACY_ALPHA_STABLE_BRANCHES = {
     "alpha18": "alpha18.4",
     "alpha19": "alpha19.6",
     "alpha20": "alpha20.7",
-}
+}  # alpha21+ rozwiązuje resolve_downloaded_branch (alpha21 -> alpha21.x)
 
 
 def _normalize_game_version_label(value: str) -> str:
@@ -120,19 +120,18 @@ def required_game_branch(value: str) -> str:
         return ""
     compact = _normalize_game_version_label(raw)
 
-    alpha = re.match(r"^alpha(\d+)(?:\.(\d+))?", compact)
+    alpha = re.match(r"^alpha(\d+)((?:\.\d+)*)", compact)
     if alpha:
         major = alpha.group(1)
-        patch = alpha.group(2)
-        if patch:
-            return f"alpha{major}.{patch}"
+        rest = alpha.group(2)
+        if rest:
+            return f"alpha{major}{rest}"
         return LEGACY_ALPHA_STABLE_BRANCHES.get(f"alpha{major}", f"alpha{major}")
 
-    modern = re.match(r"^v(\d+)(?:\.(\d+))?", compact)
+    # Pełny numer zostaje (v3.2.0, v3.0.1) - Steam ma takie nazwy branchy.
+    modern = re.match(r"^v(\d+)((?:\.\d+)*)", compact)
     if modern:
-        major = modern.group(1)
-        patch = modern.group(2)
-        return f"v{major}.{patch}" if patch else f"v{major}"
+        return f"v{modern.group(1)}{modern.group(2)}"
 
     lowered = raw.casefold()
     if lowered in {"public", "latest", "latest_experimental", "latest_experimental_fallback"}:
@@ -186,10 +185,13 @@ def _branch_sort_key(name: str) -> tuple:
 def resolve_downloaded_branch(value: str) -> str:
     """Zwraca KONKRETNY pobrany branch spełniający wymaganie, albo "".
 
-    Katalog modów podaje wymaganą wersję tylko jako grupę (``v2``), a na
-    dysku leży konkretny branch (``v2.6``). Dokładne trafienie ma
-    pierwszeństwo; dla samej grupy (``v1``/``v2``/``v3``) bierzemy
-    najnowszy pobrany branch z tej grupy.
+    Katalog modów podaje wymaganą wersję tylko jako grupę (``v2``,
+    ``alpha21``), a na dysku leży konkretny branch (``v2.6``,
+    ``alpha21.2``). Dokładne trafienie ma pierwszeństwo. Dla samej grupy:
+    - ``v1``/``v2``: najnowszy pobrany ``v<N>.x``,
+    - ``v3``: ``public``, potem ``v3.x`` (malejąco), na końcu
+      ``latest_experimental``/``latest``,
+    - ``alpha<N>``: najnowszy pobrany ``alpha<N>.x``.
     """
     branch = required_game_branch(value)
     if not branch:
@@ -197,23 +199,35 @@ def resolve_downloaded_branch(value: str) -> str:
     root = versions_root()
     if _branch_dir_is_complete(root / branch):
         return branch
-    if not re.fullmatch(r"v\d+", branch):
+
+    if re.fullmatch(r"alpha\d+", branch):
+        matches = lambda n: re.fullmatch(re.escape(branch) + r"\.\d+", n) is not None
+    elif re.fullmatch(r"v\d+", branch):
+        group = version_group(branch)
+        matches = lambda n: n != branch and version_group(n) == group
+    elif re.fullmatch(r"(v|alpha)\d+(\.\d+)+", branch):
+        # niepełny numer (v3.1) -> v3.1.x
+        matches = lambda n: n.startswith(branch + ".")
+    else:
         return ""
-    group = version_group(branch)
-    candidates = []
+
     try:
         entries = list(root.iterdir())
     except OSError:
         return ""
-    for entry in entries:
-        if entry.name == branch or version_group(entry.name) != group:
-            continue
-        if _branch_dir_is_complete(entry):
-            candidates.append(entry.name)
+    candidates = [e.name for e in entries
+                  if matches(e.name) and _branch_dir_is_complete(e)]
     if not candidates:
         return ""
-    # najpierw numerowane (v2.6 > v2.5), potem public/latest* dla v3
-    candidates.sort(key=lambda n: (bool(re.match(r"v\d", n)), _branch_sort_key(n)), reverse=True)
+
+    def rank(name: str) -> tuple:
+        low = name.lower()
+        if low == "public":
+            return (3, ())
+        if re.match(r"(v|alpha)\d", low):
+            return (2, _branch_sort_key(low))
+        return (1, ())  # latest_experimental / latest
+    candidates.sort(key=rank, reverse=True)
     return candidates[0]
 
 
