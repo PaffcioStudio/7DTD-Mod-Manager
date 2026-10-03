@@ -222,16 +222,23 @@ Common locations include:
 
 | Path | Purpose |
 | --- | --- |
-| `mm-library/`, `mm-library.json` | Local mod library and registry |
-| `mm-activation.json` | Global and per-instance activation state |
-| `mm-instances.json`, `mm-instances/` | Instance registry and data |
-| `mm-modpacks.json`, `mm-modpacks/` | Backup and modpack records |
-| `mm-downloads/` | Download queue and archive cache |
-| `mm-settings.json` | Application settings |
-| `game-versions/`, `game-versions.json` | Downloaded game branches |
+| `library/`, `library.json` | Local mod library content and its metadata registry |
+| `activation.json` | Global and per-instance activation state |
+| `instances.json`, `instances/` | Instance registry and default instance data directories |
+| `backups/`, `modpacks.json` | Backup folders (one per instance) and the backup registry; `modpacks.json` keeps its historical name |
+| `mods/` | Default user Mods folder |
+| `downloads/`, `downloads.json` | Downloaded archives and the download queue |
+| `installed-archives.json` | Archives from `downloads/` already installed into the library |
+| `settings.json` | Application settings |
+| `profiles/`, `profiles.json`, `profile-state.json` | Central game profiles, active profile, and profile-to-instance assignments |
+| `state.json` | Mod loader state |
+| `game-versions/`, `game-versions.json` | Downloaded game branches and their registry |
 | `tools/DepotDownloader` | Steam depot downloader tool |
 | `steam-account.json` | Saved launcher Steam identity |
+| `cache/` | Cached catalog responses, Steam branch list, and mod thumbnails |
 | `logs/` | Application logs |
+
+Older builds stored backups in `modpacks/`; the launcher migrates that folder to `backups/` on startup.
 
 ## Localization architecture
 
