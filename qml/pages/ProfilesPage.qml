@@ -1256,6 +1256,12 @@ PageShell {
     Item { id: skipIntroCheck; property bool checked: false }
     Item { id: editorBranch; property string value: "" }
 
+    // ---- stop game confirm ------------------------------------------------ #
+    ConfirmModal {
+        id: stopGameModal
+        onConfirmed: Game.stopRunningGame()
+    }
+
     // ---- delete confirm --------------------------------------------------- #
     ConfirmModal {
         id: deleteInstanceModal
