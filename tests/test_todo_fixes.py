@@ -778,6 +778,14 @@ class GameVersionDownloadQueue(unittest.TestCase):
         manager._set_progress(37.5)
         manager._set_status("Pobieram 7DaysToDie.exe")
         manager._set_progress(38.0)
+        # Postęp i status są zbijane w jedną paczkę (throttling UI) -
+        # poczekaj na flush z pętli zdarzeń zamiast zakładać emisję synchroniczną.
+        import time
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not any(
+                i.kind == "game" and i.progress >= 0.37 for i in downloads._model.items):
+            app.processEvents()
+            time.sleep(0.01)
 
         item = next(i for i in downloads._model.items if i.kind == "game")
         self.assertEqual(item.title, "7 Days to Die - v2.6")
@@ -941,3 +949,43 @@ def test_transient_chunk_retry_forces_single_download():
     from backend import game_versions
     source = Path(game_versions.__file__).read_text(encoding="utf-8")
     assert 'cmd[idx + 1] = "1"' in source
+
+
+class GameVersionsThreadSafety(unittest.TestCase):
+    """Sygnały z wątku DepotDownloadera muszą trafiać do wątku GUI."""
+
+    def test_worker_thread_emits_are_delivered_in_gui_thread(self):
+        import threading
+        import time
+        from PySide6.QtCore import QCoreApplication, QThread
+        from backend.game_versions import GameVersionsManager
+
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        app = QCoreApplication.instance() or QCoreApplication([])
+        manager = GameVersionsManager()
+        gui_thread = QThread.currentThread()
+        seen = []
+        manager.progressChanged.connect(lambda: seen.append(QThread.currentThread() is gui_thread))
+        manager.busyChanged.connect(lambda: seen.append(QThread.currentThread() is gui_thread))
+        manager._download_branch = "v2.6"
+
+        def worker():
+            manager._set_busy(True)
+            for i in range(5000):  # symulacja tysięcy linii stdout
+                manager._set_progress(i / 50.0)
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and len(seen) < 2:
+            app.processEvents()
+            time.sleep(0.01)
+        for _ in range(20):
+            app.processEvents()
+            time.sleep(0.01)
+
+        self.assertTrue(seen)
+        self.assertTrue(all(seen), "sygnał wyemitowany poza wątkiem GUI")
+        # throttling: 5000 aktualizacji nie może dać 5000 sygnałów do UI
+        self.assertLess(len(seen), 50)
