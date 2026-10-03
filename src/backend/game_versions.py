@@ -35,7 +35,7 @@ import zipfile
 from pathlib import Path
 
 import requests
-from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, QThread, QTimer, Qt, Signal, Slot
 
 from services import filesystem_service as fs
 from services.i18n_message import message as i18n_message
@@ -333,6 +333,11 @@ def dir_size(path: Path) -> int:
     return total
 
 
+# Co ile ms wątek GUI odświeża postęp/status pobierania. DepotDownloader
+# potrafi wypisać tysiące linii na sekundę - UI dostaje jedną paczkę zmian.
+UI_FLUSH_INTERVAL_MS = 100
+
+
 class GameVersionsManager(QObject):
     """Pobieranie listy branchy Steam + pobieranie wybranych wersji gry."""
 
@@ -350,6 +355,8 @@ class GameVersionsManager(QObject):
     gameDownloadStarted = Signal(str, object)  # branch, total bytes
     gameDownloadProgress = Signal(str, float, str)  # branch, percent, status
     gameDownloadFinished = Signal(str, str, str)   # branch, state, message
+    # Wewnętrzny most wątek roboczy -> wątek GUI (patrz _emit).
+    _uiCall = Signal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -385,6 +392,14 @@ class GameVersionsManager(QObject):
         self._worker_thread: threading.Thread | None = None
         self._cancel = threading.Event()
         self._lock = threading.Lock()
+        # Wątek roboczy (DepotDownloader) NIE może emitować sygnałów wprost:
+        # bindingi QML podpięte do notify liczą się w wątku emitującym, co
+        # zawiesza UI. Wszystko przechodzi przez kolejkowane _uiCall.
+        self._flush_lock = threading.Lock()
+        self._flush_pending = False
+        self._progress_dirty = False
+        self._status_dirty = False
+        self._uiCall.connect(self._run_ui_call, Qt.ConnectionType.QueuedConnection)
         # Do not scan /proc while constructing the backend during application
         # startup. Stale DepotDownloader processes are cleaned immediately
         # before an actual download starts and again during shutdown.
@@ -479,26 +494,74 @@ class GameVersionsManager(QObject):
         return self._needs_qr
 
     # ---------------- helpers ---------------- #
+    @Slot(object)
+    def _run_ui_call(self, fn) -> None:
+        """Wykonuje callable w wątku GUI (cel kolejkowanego _uiCall)."""
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 - UI nie może paść przez callback
+            logger.exception("Queued UI callback failed")
+
+    def _on_gui(self, fn) -> None:
+        """Wykonuje fn w wątku GUI: od razu, gdy już w nim jesteśmy, w
+        przeciwnym razie przez kolejkowany _uiCall."""
+        if QThread.currentThread() is self.thread():
+            fn()
+        else:
+            self._uiCall.emit(fn)
+
+    def _emit(self, signal, *args) -> None:
+        """Bezpieczna emisja sygnału z dowolnego wątku.
+
+        W wątku GUI emitujemy od razu; z wątku roboczego emisja jest
+        kolejkowana do wątku GUI, więc bindingi QML nigdy nie wykonują się
+        w wątku DepotDownloadera."""
+        self._on_gui(lambda: signal.emit(*args))
+
+    def _request_flush(self) -> None:
+        """Planuje jedno zbiorcze odświeżenie postępu/statusu (throttling)."""
+        with self._flush_lock:
+            if self._flush_pending:
+                return
+            self._flush_pending = True
+        self._on_gui(self._arm_flush)
+
+    def _arm_flush(self) -> None:
+        QTimer.singleShot(UI_FLUSH_INTERVAL_MS, self._flush_ui)
+
+    def _flush_ui(self) -> None:
+        """Wątek GUI: wysyła do UI najświeższy postęp i status."""
+        with self._flush_lock:
+            self._flush_pending = False
+            progress_dirty = self._progress_dirty
+            status_dirty = self._status_dirty
+            self._progress_dirty = False
+            self._status_dirty = False
+        if progress_dirty:
+            self.progressChanged.emit()
+        if status_dirty:
+            self.statusChanged.emit()
+        if (progress_dirty or status_dirty) and self._download_branch:
+            self._last_game_progress = self._progress
+            self.gameDownloadProgress.emit(
+                self._download_branch, self._progress, self._status)
+
     def _set_busy(self, value: bool) -> None:
         self._busy = value
-        self.busyChanged.emit()
+        self._emit(self.busyChanged)
 
     def _set_progress(self, value: float) -> None:
         self._progress = value
-        self.progressChanged.emit()
         if self._download_branch:
-            # DepotDownloader raportuje procent z dokładnością do 0.01%.
-            # Nie ma potrzeby budzić UI tysiącami identycznych sygnałów.
-            if value >= 100.0 or abs(value - self._last_game_progress) >= 0.1:
-                self._last_game_progress = value
-                self.gameDownloadProgress.emit(
-                    self._download_branch, value, self._status)
             if (value >= 100.0
                     or self._last_logged_game_progress < 0
                     or value - self._last_logged_game_progress >= GAME_PROGRESS_LOG_STEP):
                 self._last_logged_game_progress = value
                 install_log.info(
                     "DEPOT: %s progress %.1f%%", self._download_branch, value)
+        with self._flush_lock:
+            self._progress_dirty = True
+        self._request_flush()
 
     @staticmethod
     def _i18n_status(key: str, values: dict | None = None) -> str:
@@ -506,17 +569,14 @@ class GameVersionsManager(QObject):
 
     def _set_status(self, value: str) -> None:
         self._status = value
-        self.statusChanged.emit()
-        if self._download_branch:
-            # Aktualizuj też opis pozycji w zakładce "Pobieranie" (np.
-            # nazwa aktualnie obrabianego pliku z stdout DepotDownloadera).
-            self.gameDownloadProgress.emit(
-                self._download_branch, self._progress, value)
+        with self._flush_lock:
+            self._status_dirty = True
+        self._request_flush()
 
     def _set_qr(self, text: str, needs: bool) -> None:
         self._qr_text = text
         self._needs_qr = needs
-        self.qrChanged.emit()
+        self._emit(self.qrChanged)
 
     def _rate_limit_remaining(self) -> int:
         return max(0, int(self._steam_rate_limit_until - time.monotonic() + 0.999))
@@ -831,7 +891,7 @@ class GameVersionsManager(QObject):
             clear_steam_username()
             self._steam_username = ""
             self._session_invalid = True
-            self.changed.emit()
+            self._emit(self.changed)
             self._set_status(self._i18n_status("gameVersions.status.sessionExpired"))
             return
 
@@ -1092,8 +1152,8 @@ class GameVersionsManager(QObject):
                         raise GameVersionsError(self._i18n_status("gameVersions.status.saveUsernameFailed"))
                     self._steam_username = username
                     self._auth_succeeded = True
-                    self.changed.emit()
-                    self.accountConnected.emit(username)
+                    self._emit(self.changed)
+                    self._emit(self.accountConnected, username)
                     self._set_status(finish_status)
                     break
 
@@ -1231,8 +1291,8 @@ class GameVersionsManager(QObject):
                 self._process = None
             self._set_busy(False)
             self._set_qr("", False)
-            self.changed.emit()
-            self.finished.emit(branch, error)
+            self._emit(self.changed)
+            self._emit(self.finished, branch, error)
         return error
 
     def is_installed(self, branch: str) -> bool:
@@ -1293,7 +1353,7 @@ class GameVersionsManager(QObject):
                 items.sort(key=lambda i: int(i["buildid"] or 0), reverse=True)
                 self._available = items
                 self._available_time = time.time()
-                self.changed.emit()
+                self._emit(self.changed)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Branch list fetch failed: %s", exc)
                 self._set_status(self._i18n_status("gameVersions.status.listFailed", {"error": str(exc)}))
@@ -1359,18 +1419,18 @@ class GameVersionsManager(QObject):
         self._set_qr("", use_qr)
         self._set_status(self._i18n_status("gameVersions.status.downloadingQr" if use_qr else "gameVersions.status.downloading", {"branch": branch}))
         self._cancel.clear()
-        self.changed.emit()
-        self.gameDownloadStarted.emit(branch, total_bytes)
+        self._emit(self.changed)
+        self._emit(self.gameDownloadStarted, branch, total_bytes)
 
         def worker():
             try:
                 error = self._run_depot(cmd, branch, self._i18n_status("gameVersions.status.downloadFinished", {"branch": branch}))
                 cancelled = self._cancel.is_set()
                 if cancelled:
-                    self.gameDownloadFinished.emit(branch, "cancelled", "")
+                    self._emit(self.gameDownloadFinished, branch, "cancelled", "")
                     return
                 if error:
-                    self.gameDownloadFinished.emit(branch, "failed", error)
+                    self._emit(self.gameDownloadFinished, branch, "failed", error)
                     return
                 versions = [v for v in load_versions() if v.get("branch") != branch]
                 versions.append({
@@ -1381,12 +1441,12 @@ class GameVersionsManager(QObject):
                 })
                 save_versions(versions)
                 self._versions = versions
-                self.changed.emit()
-                self.gameDownloadFinished.emit(
+                self._emit(self.changed)
+                self._emit(self.gameDownloadFinished, 
                     branch, "completed", self._i18n_status("gameVersions.status.downloadFinished", {"branch": branch}))
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Game version download bookkeeping failed")
-                self.gameDownloadFinished.emit(branch, "failed", str(exc))
+                self._emit(self.gameDownloadFinished, branch, "failed", str(exc))
             finally:
                 self._download_branch = ""
                 self._last_game_progress = -1.0
@@ -1394,7 +1454,7 @@ class GameVersionsManager(QObject):
                 with self._lock:
                     if self._worker_thread is threading.current_thread():
                         self._worker_thread = None
-                self.changed.emit()
+                self._emit(self.changed)
 
         self._worker_thread = threading.Thread(target=worker, daemon=True, name=f"DepotDownload-{branch}")
         self._worker_thread.start()
@@ -1457,7 +1517,7 @@ class GameVersionsManager(QObject):
                     install_log.info(
                         "AUTH: Steam session saved for %s", self._steam_username
                     )
-                    self.changed.emit()
+                    self._emit(self.changed)
                 elif not self._cancel.is_set():
                     install_log.info(
                         "AUTH: authorization was not confirmed"
@@ -1467,7 +1527,7 @@ class GameVersionsManager(QObject):
                 with self._lock:
                     if self._worker_thread is threading.current_thread():
                         self._worker_thread = None
-                self.changed.emit()
+                self._emit(self.changed)
 
         self._worker_thread = threading.Thread(target=worker, daemon=True, name="DepotAuth")
         self._worker_thread.start()
@@ -1487,7 +1547,7 @@ class GameVersionsManager(QObject):
         self._pending_username = ""
         self._session_invalid = False
         self._set_status(self._i18n_status("gameVersions.status.loggedOut"))
-        self.changed.emit()
+        self._emit(self.changed)
 
     @Slot(str)
     def setSteamUsername(self, username: str) -> None:
@@ -1500,12 +1560,12 @@ class GameVersionsManager(QObject):
         if not username:
             return
         if username == self._steam_username:
-            self.changed.emit()
+            self._emit(self.changed)
             return
         if save_steam_username(username):
             self._steam_username = username
             self._set_status(self._i18n_status("gameVersions.status.loginSaved", {"username": username}))
-            self.changed.emit()
+            self._emit(self.changed)
 
     @Slot()
     def cancel(self) -> None:
@@ -1551,4 +1611,4 @@ class GameVersionsManager(QObject):
         self._versions = [v for v in self._versions
                           if v.get("branch") != branch]
         save_versions(self._versions)
-        self.changed.emit()
+        self._emit(self.changed)
