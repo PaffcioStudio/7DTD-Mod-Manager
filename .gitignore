@@ -42,3 +42,6 @@ RESUME.md
 /tools/output/
 ./tools/output/
 ./tools/__pycache__/
+.vscode/
+NOTATKI.md
+.gitkeep
