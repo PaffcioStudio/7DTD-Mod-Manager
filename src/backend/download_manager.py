@@ -43,7 +43,9 @@ from backend import mock_data
 from backend import modpack_downloader
 from backend.modinfo import find_modinfo
 from backend.scraper_client import SevenDaysModsClient, parse_mod_url
-from backend.game_versions import required_game_branch, version_requirement_text, versions_root, APP_ID
+from backend.game_versions import (
+    required_game_branch, resolve_downloaded_branch, version_requirement_text,
+    versions_root, APP_ID)
 from backend.events import EventBus
 from backend.fileops import OperationCancelled
 from backend.mod_manager import ModManager
@@ -918,18 +920,7 @@ class DownloadManager(QObject):
 
     @staticmethod
     def _is_downloaded_game_version(branch: str) -> bool:
-        branch = required_game_branch(branch)
-        target = versions_root() / branch if branch else None
-        if target is None or not target.is_dir():
-            return False
-        exe = target / "7DaysToDie.exe"
-        appid = target / "steam_appid.txt"
-        if not exe.is_file() or not appid.is_file():
-            return False
-        try:
-            return appid.read_text(encoding="utf-8", errors="replace").strip() == APP_ID
-        except OSError:
-            return False
+        return bool(resolve_downloaded_branch(branch))
 
     def _check_required_game_version(self, game_version: str, subject: str) -> str:
         """Return the concrete branch or raise before a mod/modpack download.
@@ -943,13 +934,14 @@ class DownloadManager(QObject):
         required_branch = required_game_branch((game_version or "").strip())
         if not required_branch:
             return ""
-        if not self._is_downloaded_game_version(required_branch):
+        resolved = resolve_downloaded_branch(required_branch)
+        if not resolved:
             raise modpack_downloader.DownloadError(
                 i18n_message("download.gameVersion.missing", {
                     "branch": required_branch
                 })
             )
-        return required_branch
+        return resolved
 
     # ------------------------------------------------------------------ #
     # real URL downloads (migration stage 5)
@@ -1173,6 +1165,8 @@ class DownloadManager(QObject):
             temp_dir: Path | None = None
             try:
                 item.game_version = required_game_branch(item.game_version)
+                if item.game_version:
+                    item.game_version = resolve_downloaded_branch(item.game_version) or item.game_version
                 if item.game_version and not self._is_downloaded_game_version(item.game_version):
                     raise modpack_downloader.DownloadError(
                         i18n_message("download.gameVersion.missing", {
@@ -1552,6 +1546,8 @@ class DownloadManager(QObject):
         def worker() -> None:
             try:
                 item.game_version = required_game_branch(item.game_version)
+                if item.game_version:
+                    item.game_version = resolve_downloaded_branch(item.game_version) or item.game_version
                 if item.game_version and not self._is_downloaded_game_version(item.game_version):
                     raise modpack_downloader.DownloadError(
                         i18n_message("download.gameVersion.missing", {

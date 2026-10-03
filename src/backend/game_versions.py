@@ -165,6 +165,58 @@ def version_group(name: str) -> str:
     return n
 
 
+def _branch_dir_is_complete(target: Path) -> bool:
+    """Katalog brancha ma exe + steam_appid.txt z właściwym APP_ID."""
+    if not target.is_dir():
+        return False
+    exe = target / "7DaysToDie.exe"
+    appid = target / "steam_appid.txt"
+    if not exe.is_file() or not appid.is_file():
+        return False
+    try:
+        return appid.read_text(encoding="utf-8", errors="replace").strip() == APP_ID
+    except OSError:
+        return False
+
+
+def _branch_sort_key(name: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", name))
+
+
+def resolve_downloaded_branch(value: str) -> str:
+    """Zwraca KONKRETNY pobrany branch spełniający wymaganie, albo "".
+
+    Katalog modów podaje wymaganą wersję tylko jako grupę (``v2``), a na
+    dysku leży konkretny branch (``v2.6``). Dokładne trafienie ma
+    pierwszeństwo; dla samej grupy (``v1``/``v2``/``v3``) bierzemy
+    najnowszy pobrany branch z tej grupy.
+    """
+    branch = required_game_branch(value)
+    if not branch:
+        return ""
+    root = versions_root()
+    if _branch_dir_is_complete(root / branch):
+        return branch
+    if not re.fullmatch(r"v\d+", branch):
+        return ""
+    group = version_group(branch)
+    candidates = []
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return ""
+    for entry in entries:
+        if entry.name == branch or version_group(entry.name) != group:
+            continue
+        if _branch_dir_is_complete(entry):
+            candidates.append(entry.name)
+    if not candidates:
+        return ""
+    # najpierw numerowane (v2.6 > v2.5), potem public/latest* dla v3
+    candidates.sort(key=lambda n: (bool(re.match(r"v\d", n)), _branch_sort_key(n)), reverse=True)
+    return candidates[0]
+
+
 def branches_cached() -> dict[str, str]:
     """Mapa buildid -> branch (api.steamcmd, plikowy cache 24 h) - używana
     do tłumaczenia buildid z appmanifest_251570.acf na wersję gry."""
@@ -1003,7 +1055,10 @@ class GameVersionsManager(QObject):
             self._terminate_process()
             return
 
-        if "error" in lower or "failed" in lower:
+        # Słowa kluczowe tylko jako całe słowa i nigdy w liniach "Validating
+        # <plik>" - inaczej "terrOreCoal.png" ("terrore...") łapie "error".
+        if not lower.lstrip().startswith("validating ") \
+                and re.search(r"\b(error|failed)\b", lower):
             message = raw.strip()[:1000]
             install_log.error("DEPOT: %s: %s", self._download_branch or "auth", message)
             self._set_status(message[:200])
@@ -1296,32 +1351,18 @@ class GameVersionsManager(QObject):
         return error
 
     def is_installed(self, branch: str) -> bool:
-        """Czy kompletna kopia brancha naprawdę istnieje na dysku.
+        """Czy kompletna kopia brancha (lub jego grupy, np. v2 -> v2.6)
+        naprawdę istnieje na dysku.
 
         Rejestr JSON jest tylko cache'em metadanych. Launcher nie może uznać
         wersji za zainstalowaną, jeśli użytkownik usunął katalog ręcznie albo
         pobieranie zakończyło się częściowym stanem.
         """
-        branch = required_game_branch(branch)
-        if not branch:
-            return False
-        target = versions_root() / branch
-        if not target.is_dir():
-            return False
-        exe = target / "7DaysToDie.exe"
-        appid = target / "steam_appid.txt"
-        if not exe.is_file() or not appid.is_file():
-            return False
-        try:
-            return appid.read_text(encoding="utf-8", errors="replace").strip() == APP_ID
-        except OSError:
-            return False
+        return bool(resolve_downloaded_branch(branch))
 
     def installed_path(self, branch: str) -> Path | None:
-        branch = required_game_branch(branch)
-        if self.is_installed(branch):
-            return versions_root() / branch
-        return None
+        resolved = resolve_downloaded_branch(branch)
+        return versions_root() / resolved if resolved else None
 
     # ---------------- slots ---------------- #
     @Slot()

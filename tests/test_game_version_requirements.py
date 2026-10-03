@@ -34,3 +34,26 @@ def test_game_version_helper_checks_physical_install(tmp_path, monkeypatch):
 
     (target / "steam_appid.txt").unlink()
     assert manager.is_installed("alpha20.7") is False
+
+
+def _fake_branch(root, name):
+    d = root / name
+    d.mkdir()
+    (d / "7DaysToDie.exe").write_bytes(b"MZ")
+    (d / "steam_appid.txt").write_text("251570", encoding="utf-8")
+
+
+def test_major_only_slug_resolves_to_downloaded_patch_branch(tmp_path, monkeypatch):
+    import backend.game_versions as gv
+
+    monkeypatch.setattr(gv, "versions_root", lambda: tmp_path)
+    assert gv.resolve_downloaded_branch("v2") == ""
+    _fake_branch(tmp_path, "v2.6")
+    _fake_branch(tmp_path, "v2.5")
+    assert gv.resolve_downloaded_branch("v2") == "v2.6"
+    assert gv.resolve_downloaded_branch("V2 Mods") == "v2.6"
+    assert gv.resolve_downloaded_branch("v2.5") == "v2.5"
+    assert gv.resolve_downloaded_branch("v1") == ""
+    assert gv.resolve_downloaded_branch("v3") == ""
+    _fake_branch(tmp_path, "latest_experimental")
+    assert gv.resolve_downloaded_branch("v3") == "latest_experimental"

@@ -791,19 +791,8 @@ class ProfileManager(QObject):
 
     @staticmethod
     def _downloaded_game_version_available(branch: str) -> bool:
-        from backend.game_versions import versions_root, required_game_branch, APP_ID
-        branch = required_game_branch(branch)
-        target = versions_root() / branch if branch else None
-        if target is None or not target.is_dir():
-            return False
-        exe = target / "7DaysToDie.exe"
-        appid = target / "steam_appid.txt"
-        if not exe.is_file() or not appid.is_file():
-            return False
-        try:
-            return appid.read_text(encoding="utf-8", errors="replace").strip() == APP_ID
-        except OSError:
-            return False
+        from backend.game_versions import resolve_downloaded_branch
+        return bool(resolve_downloaded_branch(branch))
 
     @Slot(str)
     def launchInstance(self, profile_id: str) -> None:
@@ -818,10 +807,13 @@ class ProfileManager(QObject):
             return
         if instance.game_branch:
             from backend.game_versions import required_game_branch, version_requirement_text
+            from backend.game_versions import resolve_downloaded_branch
             required_branch = required_game_branch(instance.game_branch)
-            if not self._downloaded_game_version_available(required_branch):
+            resolved_branch = resolve_downloaded_branch(required_branch)
+            if not resolved_branch:
                 self._bus.toastKey("toast.instances.missingGameVersion", {"branch": version_requirement_text(required_branch) or required_branch}, "warning")
                 return
+            required_branch = resolved_branch
             if required_branch != instance.game_branch:
                 instance.game_branch = required_branch
                 self._save_registry()
