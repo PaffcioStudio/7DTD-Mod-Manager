@@ -1,0 +1,152 @@
+{
+  "version": "1.0",
+  "game_version": "v3",
+  "last_updated": "2026-09-28",
+  "overhauls": [
+    {
+      "name": "Old West Migration",
+      "version": "3.2.0",
+      "description": "Niewielki mod rozbudowujący miasteczko Dzikiego Zachodu w świecie 7 Days to Die. Fabularnie nawiązuje do ocalałych, którzy po katastrofie migrowali z miast na pogranicze, próbując zacząć wszystko od nowa. Mod zwiększa rozmiar i częstotliwość występowania osad w stylu westernowym podczas generowania świata, dodaje bramę z handlarzem prowadzącą do miasteczka oraz własne budynki (POI) dopasowane tematycznie do questów na wszystkich poziomach trudności. Domyślne, dekoracyjne budynki Dzikiego Zachodu zostały przerobione na lokacje z zadaniami, a do tego dochodzą nowe płytki terenu i wędrujące zombie w klimacie westernu. To modlet działający samodzielnie, dobrze łączący się z innymi modami tego autora, jak Preppocalypse czy Wild West Mod.",
+      "description_en": "A small mod that expands the Old West town in the world of 7 Days to Die. The story follows survivors who migrated from the cities to the frontier after the catastrophe, trying to start over. The mod increases the size and spawn frequency of western-style settlements during world generation, adds a trader gate leading into the town, and brings its own custom buildings (POIs) tied to quests at every difficulty tier. The default decorative Wild West buildings were reworked into quest locations, and on top of that come new terrain tiles and wandering zombies with a western flavor. It is a standalone modlet that plays well with other mods by the same author, such as Preppocalypse or Wild West Mod.",
+      "author": "arramus",
+      "download_url": "https://github.com/arramus/V3-OldWestMigration",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK241ZKEQ6PB53WRA5PYXQ2/images/01KQK271KJBAYK8C8XE1DQ0XE8.webp"
+    },
+    {
+      "name": "Preppocalypse",
+      "version": "3.3.0",
+      "description": "Rozbudowany overhaul pokazujący apokalipsę z perspektywy przygotowanego wcześniej ocalałego (preppersa) - kogoś, kto zdążył zgromadzić zapasy i przetrwać najgorszy etap wybuchu epidemii. Mod podnosi poziom trudności względem gry podstawowej: ulepsza domyślne zombie w biomach, hordach i lokacjach powiązanych z etapem gry, dodaje sporo questowych budynków w klimacie surwiwalowym oraz nowe przepisy dopasowane do cech Preppera, Surwiwalisty i Leśnika. Zawiera też rozbudowany, niestandardowy sprzęt: broń, pojazdy i modyfikacje ułatwiające przetrwanie, a rzemiosło można prowadzić bezpośrednio ze skrzyń (przy dodatkowym, zalecanym modzie usprawniającym sortowanie). To jeden z najdłużej rozwijanych i najpopularniejszych overhauli na Nexus Mods dla tej gry.",
+      "description_en": "A big overhaul showing the apocalypse from the perspective of a well-prepared survivor (a prepper) - someone who managed to stockpile supplies and get through the worst stage of the outbreak. The mod raises the difficulty compared to the base game: it upgrades the default zombies in biomes, hordes and stage-linked locations, adds plenty of survival-themed quest buildings, and brings new recipes tied to the Prepper, Survivalist and Woodsman traits. It also includes extensive custom gear: weapons, vehicles and modifications that help you survive, and crafting can be done straight from storage crates (with an additional recommended sorting-improvement mod). It is one of the longest-developed and most popular overhauls for this game on Nexus Mods.",
+      "author": "arramus",
+      "download_url": "https://github.com/arramus/V3-Preppocalypse",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK243N88Q5DWZTMXTQQARAP/images/01KQK26C958FJN98QHE5SJANRE.webp"
+    },
+    {
+      "name": "Wild West Mod",
+      "version": "3.3.0",
+      "description": "Pełny overhaul przenoszący akcję gry w realia połowy XIX wieku - do amerykańskiego Dzikiego Zachodu. Mod usuwa elementy niepasujące czasowo do epoki (np. nowoczesną broń i technologię) i wprowadza własny, ręcznie zaprojektowany świat (New Frontier) razem z generowaniem losowych map w tym samym klimacie. Zawiera dziesiątki unikalnych lokacji w stylu westernowym, niestandardową broń, narzędzia i rekwizyty, własne jednostki wrogów, jezdne konie oraz pojazdy dopasowane do epoki. Dochodzą do tego rozbudowane questy, pułapki obronne i wędkarskie, zrównoważone rolnictwo i hodowla zwierząt oraz specjalne warianty hord podczas nocy krwawego księżyca. To jeden z bardziej kompleksowych overhauli zmieniających klimat całej rozgrywki, tworzony wspólnie przez wielu twórców społeczności.",
+      "description_en": "A full overhaul that moves the game to the mid-19th century - the American Wild West. The mod removes elements that do not fit the era (such as modern weapons and technology) and introduces its own hand-designed world (New Frontier) along with random map generation in the same setting. It features dozens of unique western-style locations, custom weapons, tools and props, its own enemy units, rideable horses and vehicles fitting the period. On top come extensive quests, defensive and fishing traps, balanced farming and animal husbandry, and special horde variants during blood moon nights. It is one of the more comprehensive overhauls that change the feel of the whole game, built jointly by many community creators.",
+      "author": "arramus",
+      "download_url": "https://github.com/arramus/V3-WildWestMod",
+      "thumbnail": "https://staticdelivery.nexusmods.com/mods/1059/images/8007/8007-1752417733-252307159.jpg"
+    },
+    {
+      "name": "EndZ Remastered",
+      "version": "3.0.1",
+      "description": "Duży overhaul rozbudowujący mechaniki przetrwania i rzemiosła. Dodaje nowe surowce (m.in. moonrock, wibranium), narzędzia i broń w kilku poziomach zaawansowania, nową amunicję oraz ulepszenia bloków wykraczające poza standardową stal. Wprowadza dodatkowy, wyższy poziom zombie (typu boss) oraz system rozpoznawania zagrożenia po kolorze jednostki. Ekwipunek został znacząco powiększony - 15-slotowy pasek narzędzi i 96-slotowy plecak, ze slotami możliwymi do zablokowania. Mod dorzuca też paski jedzenia i wody pod wskaźnikami zdrowia i staminy, szybsze zbieractwo i część rzemiosła, wyższy pułap craftingu oraz większe, trudniejsze hordy nocne. Wymaga wyłączonego AntiCheat i instalacji zarówno po stronie serwera, jak i klienta.",
+      "description_en": "A large overhaul expanding survival and crafting mechanics. It adds new resources (including moonrock and vibranium), tools and weapons across several tiers, new ammunition, and block upgrades that go beyond standard steel. It introduces an extra, higher zombie tier (boss type) and a system for recognizing threats by unit color. Inventory is significantly bigger - a 15-slot toolbelt and a 96-slot backpack, with lockable slots. The mod also adds food and water bars under the health and stamina indicators, faster gathering and some crafting, a higher crafting cap, and bigger, tougher night hordes. It requires AntiCheat to be disabled and must be installed on both the server and the client.",
+      "author": "ryanmfranks1989",
+      "download_url": "https://dev.azure.com/ryanmfranks1989/_git/EndZ%203.X",
+      "thumbnail": "https://i.ytimg.com/vi/n_acj_m45Vc/maxresdefault.jpg"
+    },
+    {
+      "name": "Backpacker Challenge",
+      "version": "3.0.0.0",
+      "description": "Niewielki modlet do rozgrywek na wyzwanie - ogranicza rzemiosło wyłącznie do przepisów dostępnych z poziomu plecaka i ogniska (włączając w to specjalny, przenośny warsztat Backpackera). Standardowe stanowiska rzemieślnicze - stół chemiczny, betoniarka i kuźnia - tracą swoje przepisy i realnie nadają się już tylko do sprzedaży lub złomowania. Bardziej zaawansowany sprzęt można zdobyć wyłącznie przez zakup u handlarza, znalezienie w łupach lub nagrody z questów. To popularny wybór wśród streamerów oraz graczy szukających prostych, ale konsekwentnie egzekwowanych zasad ograniczonego craftingu - mod działa też w trybie tylko po stronie serwera.",
+      "description_en": "A small modlet for challenge runs - it restricts crafting exclusively to recipes available from the backpack and the campfire (including the special portable Backpacker workstation). Standard crafting stations - the chemistry station, cement mixer and forge - lose their recipes and are effectively only good for selling or scrapping. More advanced gear can only be obtained by buying it from a trader, finding it in loot, or earning it as quest rewards. It is a popular pick among streamers and players looking for simple but consistently enforced limited-crafting rules - the mod also works in server-side only mode.",
+      "author": "arramus",
+      "download_url": "https://github.com/arramus/V3-BackpackerChallenge",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK24C0M3A7KJCYACY5EMRH3/images/01KQK271VFZE04C7A8WWZNQMXV.webp"
+    },
+    {
+      "name": "Outback Roadies",
+      "version": "Latest",
+      "description": "Overhaul z australijską tematyką, utrzymany w klimacie post-apokaliptycznym zbliżonym do serii Mad Max - zawiera nawet własną wersję lokacji The Compound znanej z filmu Mad Max II. Mod wprowadza ręcznie zaprojektowany, ogromny świat Australijskiego Outbacku, niestandardowe pojazdy i wrogie jednostki (w tym agresywne zwierzęta charakterystyczne dla tego regionu), a także integrację z modem NPC rozszerzającym interakcje z postaciami niezależnymi. Dodano też szereg usprawnień jakości życia oraz opcjonalny zestaw dodatkowych modów (m.in. większy, 96-slotowy plecak) i własne, australijskie przepisy kulinarne pogłębiające immersję.",
+      "description_en": "An Australian-themed overhaul with a post-apocalyptic feel close to the Mad Max series - it even includes its own version of The Compound location known from Mad Max II. The mod brings a hand-designed, huge world of the Australian Outback, custom vehicles and hostile units (including aggressive animals typical of the region), and integration with an NPC mod that extends interactions with non-player characters. It also adds a number of quality-of-life improvements, an optional set of extra mods (including a bigger 96-slot backpack), and its own Australian cooking recipes that deepen immersion.",
+      "author": "arramus",
+      "download_url": "https://github.com/arramus/V3-OutbackRoadies",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK24AB2V8QBC7EMEG4AVAKQ/images/01KQK26XF1W77YYJXRES60ZYXA.webp"
+    },
+    {
+      "name": "District Zero",
+      "version": "3.0.6",
+      "description": "Overhaul science-fiction zastępujący klasyczną apokalipsę zombie inwazją robotów. W tej wersji fabuły to właśnie maszyny - wysłane pierwotnie do powstrzymania epidemii - wybiły większość ocalałych i doprowadziły do wymarcia zwierząt. Akcja toczy się w roku 2034, w świecie napędzanym tajemniczą energią utrzymującą zainfekowanych przy życiu. Zamiast zombie gracz mierzy się z dronami, uzbrojonymi cyborgami i opancerzonymi mechami, a przetrwanie wymaga nowych taktyk - w tym używania granatów EMP przeciwko przeciwnikom mechanicznym. Mod wprowadza rozbudowane drzewko umiejętności podzielone na sześć klas postaci (m.in. Empatę czy Astrominera), każdą z unikalnymi specjalizacjami broni, oraz przeprojektowane, futurystyczne miasta w generowanym świecie. Inspiracją były gry takie jak Generation Zero, Prey i Detroit: Become Human.",
+      "description_en": "A science-fiction overhaul replacing the classic zombie apocalypse with a robot invasion. In this version of the story, it is the machines - originally sent to contain the epidemic - that wiped out most of the survivors and drove the animals to extinction. The story takes place in the year 2034, in a world powered by a mysterious energy that keeps the infected alive. Instead of zombies, the player faces drones, armed cyborgs and armored mechs, and survival requires new tactics - including using EMP grenades against mechanical enemies. The mod introduces an extensive skill tree split into six character classes (such as the Empath or the Astrominer), each with unique weapon specializations, as well as redesigned, futuristic cities in the generated world. It was inspired by games such as Generation Zero, Prey and Detroit: Become Human.",
+      "author": "Zilox135",
+      "download_url": "https://github.com/Zilox135/District-Zero/releases",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK245BQGMQX2FXGT26XE7T6/images/01KYSYT06G3MB6A6VNKPHQRTH1/Loading_03.webp"
+    },
+    {
+      "name": "7DVR",
+      "version": "4.1.0.227",
+      "description": "Mod przenoszący 7 Days to Die do wirtualnej rzeczywistości - obsługuje pełne śledzenie ruchu w sześciu stopniach swobody (6DOF) oraz kontrolery ruchowe. Pozwala na fizyczną walkę wręcz (lub tradycyjne strzelanie triggerem), pierwszoosobowe sterowanie pojazdami z pasami bezpieczeństwa dla dzieci w giroskopterze, personalizację uchwytu na każdy przedmiot oraz kilka trybów obracania (płynne, skokowe, w skali pokoju). Wspiera wspólną rozgrywkę graczy na płaskim ekranie i w goglach VR jednocześnie. Instalacja jest wyłącznie po stronie klienta i nie wymaga zmian na serwerze, ale konieczne jest wyłączenie AntiCheat (EAC). Autorzy zaznaczają, że mod wciąż rozwija się aktywnie i może zawierać nietypowe błędy charakterystyczne dla wczesnych implementacji VR.",
+      "description_en": "A mod that brings 7 Days to Die to virtual reality - it supports full six-degrees-of-freedom (6DOF) motion tracking and motion controllers. It allows physical melee combat (or traditional trigger shooting), first-person vehicle control with seat belts for kids in the gyrocopter, per-item grip customization, and several turning modes (smooth, snap, room-scale). It supports co-op play with flat-screen and VR headset players at the same time. Installation is client-side only and requires no server changes, but AntiCheat (EAC) must be disabled. The authors note that the mod is still under active development and may contain unusual bugs typical of early VR implementations.",
+      "author": "Kaaliba and Necro",
+      "download_url": "https://github.com/7DVR/7DVR_v3.0_Releases",
+      "thumbnail": "https://i.ytimg.com/vi/1oSn8gWzBh4/maxresdefault.jpg"
+    },
+    {
+      "name": "Dishong Tower 2.5",
+      "version": "Latest",
+      "description": "Wyzwanie typu 'jedno życie, jedna misja' - gracz zaczyna rozgrywkę w wieży Dishong i musi w niej pozostać od pierwszej chwili, zdobywając wszystko, co potrzebne do zbudowania giroskoptera i ucieczki z dachu do pobliskiej osady. Mod udostępnia kilka niestandardowych map różniących się biomem startowym (m.in. las, pustynia, śnieg oraz najtrudniejsza - tereny jałowe), co pozwala samodzielnie dobrać poziom trudności. Wieża została zaprojektowana od nowa pod kątem tego wyzwania, z własną linią questów prowadzącą gracza krok po kroku, a interfejs pozwala dodatkowo dostroić widoczność celownika czy paska zdrowia. Zasady są proste, ale rygorystyczne: raz w wieży, gracz nie może już z niej wyjść, a rusztowania budowlane muszą trzymać się samodzielnie, bez opierania się o gruz wokół budynku.",
+      "description_en": "A 'one life, one mission' style challenge - the player starts in the Dishong Tower and has to stay there from the very first moment, gathering everything needed to build a gyrocopter and escape from the roof to a nearby settlement. The mod provides several custom maps differing in starting biome (including forest, desert, snow and the hardest one - the wasteland), letting you pick the difficulty yourself. The tower was redesigned from scratch for this challenge, with its own quest line guiding the player step by step, and the interface additionally lets you fine-tune crosshair or health bar visibility. The rules are simple but strict: once in the tower, the player can no longer leave it, and building scaffolding has to hold up on its own, without leaning on the rubble around the building.",
+      "author": "HellsJanitor",
+      "download_url": "https://github.com/HellsJanitor/Dishong-Tower-Challenge-for-v3.0",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK23DZ7CH4S6AGSPA2X30PH/images/01KQK26PNJJ5TS9CBP72N3QSVP.webp"
+    },
+    {
+      "name": "Black Forrest",
+      "version": "Latest",
+      "description": "Mod skupiony na unikalnych, ręcznie zaprojektowanych lokacjach (POI) oraz większych, bardziej wymagających wędrujących hordach zombie. Wprowadza różnorodne stacje radiowe z własną muzyką w tle oraz utrzymuje rozgrywkę bliską mechanikom wersji podstawowej gry (tzw. styl 'elitarny vanilla'), zamiast wprowadzać rozbudowane, nowe systemy. To propozycja dla graczy, którzy cenią klimat oryginalnego 7 Days to Die, ale chcą świeżych lokacji do eksploracji i podniesionego poziomu wyzwania podczas najazdów zombie.",
+      "description_en": "A mod focused on unique, hand-designed locations (POIs) and bigger, tougher wandering zombie hordes. It introduces a variety of radio stations with their own background music and keeps gameplay close to the base game mechanics (the so-called 'elite vanilla' style) instead of adding extensive new systems. It is a pick for players who value the atmosphere of the original 7 Days to Die but want fresh locations to explore and a raised challenge level during zombie raids.",
+      "author": "ToBeauty",
+      "download_url": "https://github.com/ToBeauty/Black-Forrest",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK24JRSKGF4NSF3W2WFDXYT/images/01KQK284XYK9CXJ171BBE6NS8Q.webp"
+    },
+    {
+      "name": "The Asylum Overhaul",
+      "version": "3.0",
+      "description": "Rozbudowany overhaul tworzony przez zespół wielu twórców (lead dev, POI dev, backend, weapons, support), oparty o uznane frameworki moddingowe społeczności (SCORE, NPCCore). Zawiera rozbudowany system POI od wielu autorów (w tym pełne questline'y), własną pogodę, zbroje z bonusami zestawów, nowe frakcje i moby, integrację z Vehicle Madness oraz humorystyczne, fanartowe nawiązania do ikon horroru jako specjalnych przeciwników. Bardzo aktywnie wspierany (częste aktualizacje), ale duże patche bywają wymagające sprzętowo i czasem wymuszają reset świata.",
+      "description_en": "An extensive overhaul built by a team of many creators (lead dev, POI dev, backend, weapons, support), based on established community modding frameworks (SCORE, NPCCore). It includes an extensive POI system from many authors (including full questlines), its own weather, armor with set bonuses, new factions and mobs, integration with Vehicle Madness, and humorous, fan-art style references to horror icons as special enemies. It is very actively supported (frequent updates), but big patches can be demanding on hardware and sometimes force a world reset.",
+      "author": "Asylum Team",
+      "download_url": "https://7daystodiemods.com/mods/the-asylum-overhaul",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK24V95DQNE1WMQ40AGJW6H/images/01M2K6YCE89D8JX30ZNEPVF46K/assylum_copy.webp"
+    },
+    {
+      "name": "Zombie-Backen Mod-Pack",
+      "version": "3.0",
+      "description": "Duży, popularny overhaul (ok. 8.7 GB) rozszerzający grę o nowe zagrożenia, mroczniejszą atmosferę, trudniejsze warunki przetrwania i sporo chaotycznej zawartości. Aktywnie rozwijany, spora społeczność obserwujących.",
+      "description_en": "A large, popular overhaul (about 8.7 GB) that expands the game with new threats, a darker atmosphere, tougher survival conditions and plenty of chaotic content. It is actively developed and has a sizable following in the community.",
+      "author": "zimm794",
+      "download_url": "https://7daystodiemods.com/mods/zombie-backen-mod-pack",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KRPE458VJ2DWNY29H6V8V9PN/images/01KRPEZFK47TV0CYZE7XKM7NJW/ZB-Logo-ea9fdfcd3852b34e930af157c8de2873.webp",
+      "thumbnail_crop": true
+    },
+    {
+      "name": "Undead Water III",
+      "version": "3.0",
+      "description": "Overhaul z unikalnym, ręcznie zaprojektowanym, dużym światem morskim ('Sea-Map') i rozbudowaną zawartością tematycznie związaną z wodą - trzecia część serii. Nisza wśród overhauli, dobra alternatywa dla kogoś, kto chce zmienić rytm rozgrywki z lądowego na morski/wyspiarski.",
+      "description_en": "An overhaul with a unique, hand-designed, large sea world ('Sea-Map') and extensive water-themed content - the third part of the series. A niche pick among overhauls, and a good alternative for anyone who wants to change the pace of gameplay from land to sea and islands.",
+      "author": "DirkillerGaming",
+      "download_url": "https://7daystodiemods.com/mods/undead-water-iii",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KWP5JS79R7Z828T3A03KNA1T/images/01KWP5W8QC6J0CP9FJ5VRVY81N/Titelscreen-Undead-Water-Old.webp"
+    },
+    {
+      "name": "NordArmy",
+      "version": "4.2.2.0",
+      "description": "Rozbudowany overhaul zmieniający znaczną część zawartości gry - własną mapę (Nordland), unikalne bronie (m.in. maczety, kije bejsbolowe i broń pod klimat moda), niestandardowe pojazdy oraz autorskie lokacje (POI) zastępujące część domyślnych budynków. Dodaje własne postacie startowe z unikalnymi scenkami wprowadzającymi, pomijającymi standardowy samouczek, a także sporo humorystycznych, nietypowych elementów rozgrywki charakterystycznych dla tego moda. Wprowadza zauważalne zmiany w balansie walki, budowaniu świata i mechanice zombie, oferując świeże doświadczenie zarówno dla nowych, jak i doświadczonych graczy. Wymaga zgodności z wersją V3 gry i restartu po instalacji; nie zaleca się uruchamiania na wcześniej rozpoczętych zapisach.",
+      "description_en": "An extensive overhaul that changes a large part of the game's content - its own map (Nordland), unique weapons (including machetes, baseball bats and weapons fitting the mod's theme), custom vehicles and original locations (POIs) replacing some of the default buildings. It adds its own starting characters with unique intro scenes that skip the standard tutorial, plus plenty of humorous, unusual gameplay elements typical of this mod. It brings noticeable changes to combat balance, world building and zombie mechanics, offering a fresh experience for both new and experienced players. It requires compatibility with game version V3 and a restart after installation; running it on previously started saves is not recommended.",
+      "author": "NORDMANN",
+      "download_url": "https://github.com/NORDMANN845/NordArmy-Mod-3.0/releases",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK24MEA7D71RT3S475N2727/images/01KQK2844HG0QAHN95V4CDH69Q.webp"
+    },
+    {
+      "name": "I Am Legend",
+      "version": "3.0",
+      "description": "Overhaul osadzający rozgrywkę w klimacie post-apokaliptycznego świata inspirowanego 'I Am Legend' - śmiertelny wirus (Krippin Virus) wybił niemal całą populację, a większość ocalałych zmieniła się w agresywne, wrażliwe na światło stworzenia (Dark Seekers) polujące nocą. Mod skupia się na budowaniu mrocznej, kinowej atmosfery zagrożenia i przetrwania nawiązującej do materiału źródłowego, zamiast klasycznej rozgrywki zombie. Aktywnie rozwijany przez autora (regularne poprawki błędów i dostrajanie balansu).",
+      "description_en": "An overhaul setting the gameplay in a post-apocalyptic world inspired by 'I Am Legend' - a deadly virus (the Krippin Virus) wiped out almost the entire population, and most survivors turned into aggressive, light-sensitive creatures (Dark Seekers) that hunt at night. The mod focuses on building a dark, cinematic atmosphere of threat and survival that nods to the source material, instead of classic zombie gameplay. It is actively developed by the author (regular bug fixes and balance tuning).",
+      "author": "HellsJanitor",
+      "download_url": "https://github.com/HellsJanitor/I-Am-Legend-3.0",
+      "thumbnail": "https://downloads.7daystodiemods.com/mods/01KQK24AB2D1QJ8Q7DSHNV14FW/images/01KQK26X4HWYKBT7XDM6GB05RY.webp"
+    },
+    {
+      "name": "TongoMod",
+      "version": "3.6.3",
+      "description": "Rozbudowany overhaul łączący dużą porcję nowej zawartości z głębokimi zmianami w mechanikach postępu i przetrwania. Wprowadza rozwój broni oraz narzędzi poprzez ich używanie, ponad 300 zadań klasowych oraz codzienne zlecenia od handlarzy, w tym polowania na specjalne odmiany zombie. Utrudnia przetrwanie przez mechanikę zapachu mięsa noszonego w plecaku, groźniejsze ataki wywołujące krwawienie i infekcje oraz progresywnie rosnące hordy, z których nagrody trafiają w formie skrzynek prosto do ekwipunku. Jednocześnie dorzuca sporo usprawnień: rolnictwo w stylu Alpha 19 (bez konieczności ponownego sadzenia nasion), rozkładanie amunicji na części pierwsze, tworzenie dowolnych książek i schematów, automatyczne oszczędzanie paliwa w stacjach roboczych oraz powrót klasycznych pułapek kolczastych. Całość dopełniają nowe lokacje (POI), bronie, pasieki, odświeżony interfejs (HUD) i plecak powiększony do 84 slotów.",
+      "description_en": "An extensive overhaul combining a big chunk of new content with deep changes to progression and survival mechanics. It introduces weapon and tool progression through use, over 300 class quests and daily contracts from traders, including hunts for special zombie variants. It makes survival harder through a meat-scent mechanic for meat carried in your backpack, nastier attacks that cause bleeding and infections, and progressively growing hordes whose rewards arrive as crates straight in your inventory. At the same time it adds plenty of improvements: Alpha 19 style farming (no need to replant seeds), breaking ammo down into components, crafting any book and schematic, automatic fuel saving in workstations, and the return of classic spike traps. It is all rounded out by new locations (POIs), weapons, apiaries, a refreshed HUD and a backpack expanded to 84 slots.",
+      "author": "TekjaGameplays",
+      "download_url": "https://github.com/TekjaGameplays/TongoMod36",
+      "thumbnail": "https://i.ytimg.com/vi/M9zCzpe0rTc/hq720.jpg?sqp=-oaymwEXCK4FEIIDSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLDdIIgCmh4_G1cksOnK6jcGzurZ8Q"
+    }
+  ]
+}
