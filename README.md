@@ -4,10 +4,10 @@ A Linux desktop launcher and mod manager for **7 Days to Die**, built with **Pyt
 
 7DTD Mod Manager brings game-version control, isolated instances, mod installation, modpacks, overhauls, backups, downloads, updates, conflict detection, profiles, and online mod discovery into one desktop application.
 
-**Author:** Paffcio  
-**Platform:** Linux  
-**Current version:** 1.0.42  
-**UI languages:** English and Polish  
+**Author:** Paffcio
+**Platform:** Linux
+**Current version:** 1.0.42
+**UI languages:** English and Polish
 **Default language:** English on a new installation; Polish can be selected in Settings.
 
 ## Features
