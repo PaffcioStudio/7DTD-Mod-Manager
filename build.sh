@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # ============================================================================
 #  7 Days to Die - Mod Manager :: build
-#  Buduje .deb i .AppImage do ./dist/ (bundluje .venv - apka działa sama).
+#  Builds .deb and .AppImage into ./dist/ (bundles .venv - the app runs standalone).
 #
-#  Kolejność:
-#    1. dist/ istnieje? nie = utwórz, tak = wyczyść zawartość
-#    2. weryfikacja środowiska (.venv - w razie braku wywołuje ./venv.sh)
-#    3. zebranie payloadu projektu do .build/opt/7dtd-mod-manager
-#    4. pakowanie .deb (dpkg-deb)
-#    5. pakowanie .AppImage (appimagetool, pobierany na miejsce do .build)
-#    6. sprzątanie śmieci po budowie
+#  Steps:
+#    1. dist/ exists? no = create it, yes = clear its contents
+#    2. verify the environment (.venv - calls ./venv.sh if it is missing)
+#    3. collect the project payload into .build/opt/7dtd-mod-manager
+#    4. package the .deb (dpkg-deb)
+#    5. package the .AppImage (appimagetool, downloaded into .build on demand)
+#    6. clean up build leftovers
 # ============================================================================
 set -euo pipefail
 
@@ -27,42 +27,49 @@ APP_ID="7dtd-mod-manager"
 DIST="$PROJECT_DIR/dist"
 BUILD="$PROJECT_DIR/.build"
 
-# Opcjonalnie: ./build.sh --install lub ./build.sh -i instaluje/aktualizuje
-# zbudowany pakiet .deb bez pytania o potwierdzenie.
+# Usage: ./build.sh [VERSION] [--install|-i]
+#   VERSION       e.g. 1.0.43 - written to src/services/app_info.py (and to
+#                 README.md and tests/test_app_info.py) and used in package names.
+#                 Without it, APP_VERSION from app_info.py is used.
+#   --install/-i  installs/updates the built .deb without asking.
 INSTALL_DEB=false
-if [ "$#" -gt 0 ]; then
-    case "$1" in
+NEW_VERSION=""
+for arg in "$@"; do
+    case "$arg" in
         --install|-i)
             INSTALL_DEB=true
-            shift
+            ;;
+        v[0-9]*|[0-9]*)
+            NEW_VERSION="${arg#v}"
+            if ! [[ "$NEW_VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+                fail "Niepoprawna wersja: $arg (oczekiwane np. 1.0.43)"
+                exit 2
+            fi
             ;;
         *)
-            fail "Nieznany argument: $1 (użyj --install lub -i)"
+            fail "Nieznany argument: $arg"
+            echo "Użycie: $0 [WERSJA] [--install|-i]" >&2
             exit 2
             ;;
     esac
-fi
-if [ "$#" -gt 0 ]; then
-    fail "Zbyt wiele argumentów. Użyj: $0 [--install|-i]"
-    exit 2
-fi
+done
 
 # ----------------------------------------------------------------------------
-# 0. narzędzia hosta
+# 0. host tools
 # ----------------------------------------------------------------------------
 for tool in rsync dpkg-deb curl python3; do
     command -v "$tool" >/dev/null 2>&1 || { fail "Brak wymaganego narzędzia: $tool"; exit 1; }
 done
 
 # ----------------------------------------------------------------------------
-# 1. dist/ - utwórz albo wyczyść (ma zawierać TYLKO najnowsze pliki)
+# 1. dist/ - create or clear it (it must contain ONLY the newest files)
 # ----------------------------------------------------------------------------
 mkdir -p "$DIST"
 find "$DIST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 ok "dist/ wyczyszczony"
 
 # ----------------------------------------------------------------------------
-# 2. środowisko (.venv) - jak w venv.sh; brak = budujemy je w locie
+# 2. environment (.venv) - same as venv.sh; if missing, build it on the fly
 # ----------------------------------------------------------------------------
 if [ ! -x "$PROJECT_DIR/.venv/bin/python" ]; then
     warn ".venv nie istnieje - tworzę środowisko przez ./venv.sh"
@@ -76,8 +83,15 @@ fi
 ok "Środowisko .venv gotowe"
 
 # ----------------------------------------------------------------------------
-# 3. wersja + roboczy katalog budowania
+# 3. version + build working directory
 # ----------------------------------------------------------------------------
+if [ -n "$NEW_VERSION" ]; then
+    # app_info.py is the single source of truth; keep README and the test in sync
+    sed -i "s/^APP_VERSION = \".*\"/APP_VERSION = \"$NEW_VERSION\"/" src/services/app_info.py
+    sed -i "s/^\*\*Current version:\*\* .*/**Current version:** $NEW_VERSION  /" README.md
+    sed -i "s/assert APP_VERSION == \".*\"/assert APP_VERSION == \"$NEW_VERSION\"/" tests/test_app_info.py
+    ok "Wersja ustawiona na $NEW_VERSION (app_info.py, README.md, tests/test_app_info.py)"
+fi
 VERSION="$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' src/services/app_info.py | head -1)"
 [ -n "$VERSION" ] || { fail "Nie udało się odczytać APP_VERSION"; exit 1; }
 ARCH="$(dpkg --print-architecture)"
@@ -87,7 +101,7 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD"
 PAYLOAD="$BUILD/opt/$APP_ID"
 
-# payload projektu (bez rzeczy deweloperskich i środowiska - te osobno)
+# project payload (without dev files and the environment - handled separately)
 mkdir -p "$PAYLOAD"
 rsync -a \
     --exclude '.venv/' --exclude '.git/' --exclude '.build/' --exclude 'dist/' \
@@ -95,12 +109,12 @@ rsync -a \
     --include '/README.md' --exclude '*.md' \
     --exclude '.mygit*' --exclude 'shots/' \
     "$PROJECT_DIR/" "$PAYLOAD/"
-# środowisko w całości (apka działa wtedy bez żadnych zależności systemowych)
-# uwaga: ukośnik na końcu źródła = kopiuj ZAWARTOŚĆ do .venv (bez zagnieżdżania)
+# the whole environment (the app then runs without any system dependencies)
+# note: the trailing slash on the source = copy its CONTENTS into .venv (no nesting)
 rsync -a "$PROJECT_DIR/.venv/" "$PAYLOAD/.venv"
-# odchudzenie: wycinamy moduły Qt, których apka NIE używa (apka = QML/Quick,
-# Network, Svg) - WebEngine to cały Chromium (~240 MB), Multimedia/ffmpeg
-# ~40 MB, Pdf/Quick3D ~kilkanaście; zostaje wszystko, czego QML potrzebuje
+# slimming down: strip the Qt modules the app does NOT use (the app = QML/Quick,
+# Network, Svg) - WebEngine is a whole Chromium (~240 MB), Multimedia/ffmpeg
+# ~40 MB, Pdf/Quick3D a dozen or so MB; everything QML needs stays
 VENV_SP="$PAYLOAD/.venv/lib/python3.12/site-packages/PySide6"
 for junk in \
     "$VENV_SP/Qt/lib/libQt6WebEngine"*.so* \
@@ -131,7 +145,7 @@ done
 ok "Payload zebrany: $(du -sh "$PAYLOAD" | cut -f1)"
 
 # ----------------------------------------------------------------------------
-# 4. pliki wspólne (desktop + ikona + launcher)
+# 4. shared files (desktop entry + icon + launcher)
 # ----------------------------------------------------------------------------
 write_desktop() {  # $1 = Exec
     cat <<EOF
@@ -153,11 +167,11 @@ EOF
 
 WRAPPER="/usr/bin/$APP_ID"
 PAYLOAD_REL="opt/$APP_ID"
-# identyfikator AppStream (format reverse-DNS) - pliki .desktop i .appdata.xml
-# MUSZĄ się nazywać tak samo jak <id>, inaczej validate-tree failuje
+# AppStream identifier (reverse-DNS format) - the .desktop and .appdata.xml files
+# MUST be named exactly like the <id>, otherwise validate-tree fails
 APPSTREAM_ID="io.github.paffciostudio.$APP_ID"
 
-write_appdata() {  # AppStream metainfo (usuwa WARNING appimagetool; wersja dynamiczna)
+write_appdata() {  # AppStream metainfo (removes the appimagetool WARNING; version is dynamic)
     local date_today
     date_today="$(date +%F)"
     cat <<EOF
@@ -254,8 +268,8 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
          "$APPDIR/usr/share/metainfo" "$APPDIR/opt"
 
 cp -a "$PAYLOAD" "$APPDIR/$PAYLOAD_REL"
-# desktop w root AppDir (dla appimagetool) ORAZ w usr/share/applications
-# (appstreamcli validate-tree szuka wyłącznie w lokalizacji FHS)
+# desktop file in the AppDir root (for appimagetool) AND in usr/share/applications
+# (appstreamcli validate-tree only looks in the FHS location)
 write_desktop "AppRun" > "$APPDIR/$APPSTREAM_ID.desktop"
 write_desktop "AppRun" > "$APPDIR/usr/share/applications/$APPSTREAM_ID.desktop"
 write_appdata > "$APPDIR/usr/share/metainfo/$APPSTREAM_ID.appdata.xml"
@@ -279,21 +293,21 @@ if [ ! -x "$APPIMAGETOOL" ]; then
     chmod +x "$APPIMAGETOOL"
 fi
 
-# FUSE bywa niedostępny - extract-and-run omawia temat
+# FUSE may be unavailable - extract-and-run works around it
 "$APPIMAGETOOL" --appimage-extract-and-run "$APPDIR" \
     "$DIST/${APP_ID}-${VERSION}-x86_64.AppImage" >/dev/null
 ok ".AppImage zbudowany"
 
 # ----------------------------------------------------------------------------
-# 6. sprzątanie śmieci po budowie
+# 6. clean up build leftovers
 # ----------------------------------------------------------------------------
 rm -rf "$BUILD"
 find "$PROJECT_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
 rm -rf "$PROJECT_DIR/squashfs-root" 2>/dev/null || true
 
 # ----------------------------------------------------------------------------
-# instalacja .deb (opcjonalnie, na życzenie) - wersja i architektura
-# wynikają ze zmiennych budowania, więc działa też dla przyszłych wersji
+# .deb installation (optional, on request) - version and architecture
+# come from the build variables, so it also works for future versions
 # ----------------------------------------------------------------------------
 DEB_FILE="$DIST/${APP_ID}_${VERSION}_${ARCH}.deb"
 APPIMAGE_FILE="$DIST/${APP_ID}-${VERSION}-x86_64.AppImage"
@@ -313,7 +327,7 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# podsumowanie
+# summary
 # ----------------------------------------------------------------------------
 echo ""
 ok "Gotowe - dist/ zawiera:"

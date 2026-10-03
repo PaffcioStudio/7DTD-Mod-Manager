@@ -32,14 +32,14 @@ fi
 # ----------------------------------------------------------------------------
 # 2. Launch the app with the venv interpreter
 # ----------------------------------------------------------------------------
-# 3. Środowisko interaktywnego shella potrafi zepsuć ładowanie wtyczek Qt:
-#    - LD_LIBRARY_PATH (np. pod CUDA/conda/SDK) przesłania systemowe
-#      biblioteki, których wayland/xcb wymagają przy dlopen,
-#    - PYTHONPATH/PYTHONHOME mogą wcisnąć INNĄ kopię PySide6/Qt (np.
-#      systemową) zamiast tej z .venv - objaw: wtyczki "znalezione, ale
-#      nie do załadowania". PySide6 ma Qt w pakiecie, main.py sam dodaje
-#      src/ do sys.path - aplikacja nie potrzebuje żadnego z nich.
-#      (Ten sam mechanizm co _clean_subprocess_env() starego projektu.)
+# An interactive shell environment can break Qt plugin loading:
+#   - LD_LIBRARY_PATH (e.g. for CUDA/conda/an SDK) overrides the system
+#     libraries that wayland/xcb need at dlopen time,
+#   - PYTHONPATH/PYTHONHOME can force a DIFFERENT copy of PySide6/Qt (e.g. the
+#     system one) instead of the one from .venv - symptom: plugins "found, but
+#     could not be loaded". PySide6 ships its own Qt and main.py adds src/ to
+#     sys.path itself - the app needs none of these variables.
+#     (Same mechanism as _clean_subprocess_env() in the old project.)
 unset QT_PLUGIN_PATH
 unset QT_QPA_PLATFORM_PLUGIN_PATH
 unset LD_LIBRARY_PATH
