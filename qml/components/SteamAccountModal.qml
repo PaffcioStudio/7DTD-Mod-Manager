@@ -17,6 +17,33 @@ Item {
     property bool accountMenuOpen: false
     property bool opened: accountMenuOpen || qrModal.opened
 
+    // mapToItem() nie jest śledzone przez bindingi QML, więc pozycję menu
+    // przeliczamy wymuszając re-ewaluację przez layoutTick: przy otwarciu
+    // (także po ustabilizowaniu layoutu) oraz gdy ikonka/nagłówek zmienią
+    // rozmiar lub położenie (np. zmiana rozmiaru okna).
+    property int layoutTick: 0
+    onAccountMenuOpenChanged: {
+        if (accountMenuOpen) {
+            layoutTick++
+            Qt.callLater(function() { root.layoutTick++ })
+        }
+    }
+
+    Connections {
+        target: root.anchorItem
+        ignoreUnknownSignals: true
+        function onXChanged() { root.layoutTick++ }
+        function onYChanged() { root.layoutTick++ }
+        function onWidthChanged() { root.layoutTick++ }
+    }
+
+    Connections {
+        target: root.menuParent
+        ignoreUnknownSignals: true
+        function onWidthChanged() { root.layoutTick++ }
+        function onHeightChanged() { root.layoutTick++ }
+    }
+
     function open() {
         // Dla zapisanej sesji używamy zwykłego panelu typu menu/powiadomienie.
         // Nie korzystamy tu z Controls.Popup, ponieważ panel jest wtedy
@@ -72,24 +99,36 @@ Item {
         }
     }
 
+    // Menu leży w tym samym rodzicu co warstwa zamykająca (Overlay.overlay),
+    // ale z wyższym z - dzięki temu przyciski dostają kliknięcia, a nie
+    // niewidzialna warstwa przykrywająca całe okno. menuParent (nagłówek)
+    // służy tylko jako punkt odniesienia: menu zaczyna się pod jego dolną
+    // krawędzią i jest wyrównane do prawej krawędzi ikonki konta.
     Rectangle {
         id: accountMenu
         objectName: "steamAccountMenu"
-        parent: root.menuParent || Overlay.overlay
+        parent: Overlay.overlay
         visible: root.accountMenuOpen
         z: 1090
-        width: Math.min(348, Math.max(300, (root.menuParent || Overlay.overlay).width - 24))
+        width: Math.min(348, Math.max(300, (Overlay.overlay ? Overlay.overlay.width : 348) - 24))
         height: 186
         radius: Dimensions.radiusLg
         color: Theme.bg2
         border.width: 1
         border.color: Theme.borderHover
         x: {
-            const host = root.menuParent || Overlay.overlay
+            root.layoutTick
+            const host = Overlay.overlay
+            if (!host)
+                return 12
             const right = accountAnchorRight(host)
             return Math.max(12, Math.min(host.width - width - 12, right - width))
         }
-        y: accountAnchorTopBoundary(root.menuParent || Overlay.overlay)
+        y: {
+            root.layoutTick
+            const host = Overlay.overlay
+            return host ? accountAnchorTopBoundary(host) : Dimensions.headerH
+        }
 
         function accountAnchorRight(host) {
             if (!root.anchorItem)
@@ -98,11 +137,9 @@ Item {
         }
 
         function accountAnchorTopBoundary(host) {
-            // The compact account panel begins exactly on the header's
-            // bottom separator. This keeps the search bar and header controls
-            // fully visible and makes the panel feel attached to the bar.
+            // Panel zaczyna się dokładnie na dolnej krawędzi nagłówka.
             if (root.menuParent)
-                return host.height
+                return root.menuParent.mapToItem(host, 0, root.menuParent.height).y
             if (!root.anchorItem)
                 return Dimensions.headerH
             return root.anchorItem.mapToItem(host, 0, root.anchorItem.height).y
