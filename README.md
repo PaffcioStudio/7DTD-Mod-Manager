@@ -300,6 +300,12 @@ The launcher checks actual installed library/instance content instead of trustin
 
 Progress values are clamped to safe ranges, negative sizes are normalized, large values are displayed using human-readable units, and download bytes are kept separate from extraction/file-count progress.
 
+## Disclaimer
+
+7DTD Mod Manager is an independent, community-made tool. It is not affiliated with, endorsed by, or connected to The Fun Pimps (creators of 7 Days to Die) or any of the websites it integrates with.
+
+The Discover feature uses the public API and catalog of [7daystodiemods.com](https://7daystodiemods.com). All mods, descriptions, and files available through it belong to their respective authors - if you enjoy a mod, support its author.
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

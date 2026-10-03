@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a problem with the launcher
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in the fields below - it makes the bug fixable.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Shown in Settings, e.g. 1.0.42
+      placeholder: 1.0.42
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Discover (online mod browser)
+        - Mod library / activation
+        - Instances
+        - Game versions / Steam downloads
+        - Modpacks / overhauls
+        - Backups
+        - Downloads / updates
+        - Profiles
+        - UI / themes / localization
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, and what you expected vs what actually happened.
+      placeholder: |
+        1. Open '...'
+        2. Click '...'
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Linux distribution
+      description: e.g. Ubuntu 24.04, TUXEDO OS 4, Arch
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant fragment from ~/.7dtd_modmanager/logs/ (paste as text or attach).
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable.
