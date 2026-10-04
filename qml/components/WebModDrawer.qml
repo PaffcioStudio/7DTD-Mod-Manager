@@ -33,6 +33,79 @@ Item {
         opened = false
     }
 
+    function normalizedGameVersion(value) {
+        var raw = (value || "").toString().toLowerCase().replace(/[^a-z0-9.]/g, "")
+        var alpha = raw.match(/^(alpha|a)(\d+(?:\.\d+)*)$/)
+        if (alpha)
+            return "alpha" + alpha[2]
+        var modern = raw.match(/^v(\d+(?:\.\d+)*)$/)
+        if (modern)
+            return "v" + modern[1]
+        return ""
+    }
+
+    function versionParts(value) {
+        var normalized = normalizedGameVersion(value)
+        if (!normalized)
+            return null
+        var alpha = normalized.indexOf("alpha") === 0
+        var prefix = alpha ? "alpha" : "v"
+        var number = normalized.substring(prefix.length)
+        return {kind: prefix, parts: number.split(".").map(function(n) { return parseInt(n, 10) })}
+    }
+
+    function versionsMatch(selected, detected) {
+        var selectedInfo = versionParts(selected)
+        if (!selectedInfo)
+            return false
+        var values = detected || []
+        for (var i = 0; i < values.length; ++i) {
+            var candidateInfo = versionParts(values[i])
+            if (!candidateInfo || candidateInfo.kind !== selectedInfo.kind)
+                continue
+            if (candidateInfo.parts.join(".") === selectedInfo.parts.join("."))
+                return true
+            if (candidateInfo.parts.length === 1 &&
+                candidateInfo.parts[0] === selectedInfo.parts[0])
+                return true
+            if (selectedInfo.parts.length === 1 &&
+                candidateInfo.parts[0] === selectedInfo.parts[0])
+                return true
+        }
+        return false
+    }
+
+    function declaredModVersionFallback() {
+        var raw = drawer.details.gameVersions || ""
+        return raw.split(",").map(function(v) { return v.trim() }).filter(function(v) { return v !== "" })
+    }
+
+    function fileAllowedForSelection(file) {
+        var detected = file.detectedGameVersions || []
+        var selected = drawer.selectedGameVersion
+        if (selected !== "")
+            return detected.length > 0
+                   ? versionsMatch(selected, detected)
+                   : (declaredModVersionFallback().length === 1 &&
+                      versionsMatch(selected, declaredModVersionFallback()))
+
+        // Bez wybranego filtra nie wybieramy w ciemno pliku z nieznaną/
+        // wielowersyjną kompatybilnością. Bezpieczny wyjątek: mod sam
+        // deklaruje dokładnie jedną wersję gry.
+        if (detected.length === 0)
+            return declaredModVersionFallback().length === 1
+        return detected.length === 1
+    }
+
+    function selectedVersionLabel() {
+        var normalized = normalizedGameVersion(drawer.selectedGameVersion)
+        if (!normalized)
+            return drawer.selectedGameVersion || ""
+        if (normalized.indexOf("alpha") === 0)
+            return "Alpha " + normalized.substring(5)
+        return normalized.toUpperCase()
+    }
+
     parent: Overlay.overlay
     anchors.fill: parent
     z: 400
@@ -193,9 +266,10 @@ Item {
                                 readonly property string rowState: Downloads.modDownloads[fileRow.modelData.fileRef] || ""
                                 readonly property string modState: Downloads.modDownloads[drawer.slug] || ""
                                 readonly property bool rowBusy: ["queued", "downloading", "paused"].indexOf(rowState) >= 0
-                                readonly property bool rowLocked: rowBusy || ["queued", "downloading", "paused", "completed"].indexOf(modState) >= 0
+                                readonly property bool rowCompatible: drawer.fileAllowedForSelection(fileRow.modelData)
+                                readonly property bool rowLocked: rowBusy || ["queued", "downloading", "paused", "completed"].indexOf(modState) >= 0 || !rowCompatible
                                 Layout.fillWidth: true
-                                implicitHeight: 58
+                                implicitHeight: fileRow.rowCompatible ? 58 : 78
                                 radius: 9
                                 color: fileHover.hovered ? Theme.bg3 : Theme.bg2
                                 border.width: 1
@@ -208,8 +282,8 @@ Item {
                                     spacing: 10
 
                                     Icon {
-                                        name: fileRow.modelData.verified ? "shield" : "package"
-                                        tint: fileRow.modelData.verified ? Theme.success : Theme.textMuted
+                                        name: !fileRow.rowCompatible ? "alert-triangle" : fileRow.modelData.verified ? "shield" : "package"
+                                        tint: !fileRow.rowCompatible ? Theme.warning : fileRow.modelData.verified ? Theme.success : Theme.textMuted
                                         size: 16
                                         Layout.alignment: Qt.AlignVCenter
                                     }
@@ -244,6 +318,20 @@ Item {
                                                 return parts.join(" · ")
                                             }
                                             color: Theme.textMuted
+                                            font.pixelSize: Typography.caption
+                                            font.family: Theme.fontFamily
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            visible: !fileRow.rowCompatible
+                                            text: drawer.selectedGameVersion !== ""
+                                                  ? I18n.format("discover.drawer.fileIncompatible", {
+                                                        version: drawer.selectedVersionLabel()
+                                                    })
+                                                  : I18n.t("discover.drawer.fileVersionUnknown")
+                                            color: Theme.warning
                                             font.pixelSize: Typography.caption
                                             font.family: Theme.fontFamily
                                             elide: Text.ElideRight

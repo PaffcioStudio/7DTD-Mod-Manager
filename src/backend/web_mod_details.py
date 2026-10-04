@@ -110,6 +110,7 @@ def _map_details(slug: str, meta: dict) -> dict:
             "sizeText": human_size(int(f.get("size_bytes") or 0)),
             "fileType": f.get("file_type") or "main",
             "verified": bool(f.get("verified")),
+            "detectedGameVersions": list(f.get("detected_game_versions") or []),
         })
     for link in meta.get("external_links", []):
         files.append({
@@ -119,6 +120,7 @@ def _map_details(slug: str, meta: dict) -> dict:
             "sizeText": "",
             "fileType": "external",
             "verified": False,
+            "detectedGameVersions": list(link.get("detected_game_versions") or []),
         })
     return {
         "slug": slug,

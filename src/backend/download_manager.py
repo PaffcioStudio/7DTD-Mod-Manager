@@ -42,7 +42,12 @@ from backend import downloads_cleanup
 from backend import mock_data
 from backend import modpack_downloader
 from backend.modinfo import find_modinfo
-from backend.scraper_client import SevenDaysModsClient, parse_mod_url
+from backend.scraper_client import (
+    SevenDaysModsClient,
+    parse_mod_url,
+    detect_file_game_versions,
+    game_version_matches,
+)
 from backend.game_versions import (
     required_game_branch, resolve_downloaded_branch, version_requirement_text,
     versions_root, APP_ID)
@@ -1302,6 +1307,50 @@ class DownloadManager(QObject):
         self._emit_counts()
         self._bus.toastKey("toast.downloads.started", {"title": slug_norm}, "info")
 
+    @staticmethod
+    def _file_matches_selected_game_version(file, game_version: str, mod_info) -> bool:
+        """Return whether a scraper file is safe for the selected game version."""
+        selected = (game_version or "").strip()
+        if not selected:
+            return True
+        detected = detect_file_game_versions(
+            label=file.label,
+            filename=file.filename,
+            mod_version=file.version,
+        )
+        if detected:
+            return game_version_matches(selected, detected)
+
+        # Jeżeli nazwa pliku nic nie mówi, wolno użyć go tylko wtedy, gdy sam
+        # mod deklaruje jedną, jednoznaczną wersję gry zgodną z wyborem.
+        declared = [
+            str(value).strip()
+            for value in (mod_info.game_versions or [])
+            if str(value).strip()
+        ]
+        return len(declared) == 1 and game_version_matches(selected, declared)
+
+    @staticmethod
+    def _external_matches_selected_game_version(link, game_version: str, mod_info) -> bool:
+        selected = (game_version or "").strip()
+        if not selected:
+            return True
+        detected = detect_file_game_versions(
+            label=link.label,
+            # URL hostera (np. MediaFire) może zawierać wersję samego moda
+            # albo numer pliku. Nie traktujemy go jako nazwy pliku gry.
+            filename="",
+            mod_version=link.version,
+        )
+        if detected:
+            return game_version_matches(selected, detected)
+        declared = [
+            str(value).strip()
+            for value in (mod_info.game_versions or [])
+            if str(value).strip()
+        ]
+        return len(declared) == 1 and game_version_matches(selected, declared)
+
     def _start_mod_worker(self, item: DownloadItem) -> None:
         cancel = item.cancel_event
         pause = item.pause_event
@@ -1321,6 +1370,10 @@ class DownloadManager(QObject):
 
         def worker() -> None:
             temp_dir: Path | None = None
+            # ``item.game_version`` jest później zamieniane na konkretny
+            # pobrany branch (np. alpha21.2). Do dopasowania pliku potrzebujemy
+            # jednak wersji wybranej przez użytkownika (np. alpha21).
+            selected_game_version = (item.game_version or "").strip()
             try:
                 item.game_version = required_game_branch(item.game_version)
                 if item.game_version:
@@ -1354,6 +1407,12 @@ class DownloadManager(QObject):
                     if main_file is None:
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.mod.fileMissing"))
+                    if not self._file_matches_selected_game_version(
+                            main_file, selected_game_version, info):
+                        raise modpack_downloader.DownloadError(
+                            i18n_message("download.mod.incompatibleFile", {
+                                "version": selected_game_version
+                            }))
                 elif item.chosen_file_ref.startswith("external:"):
                     ext_url = item.chosen_file_ref[len("external:"):]
                     chosen_ext = next(
@@ -1361,10 +1420,64 @@ class DownloadManager(QObject):
                     if chosen_ext is None:
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.mod.externalMissing"))
+                    if not self._external_matches_selected_game_version(
+                            chosen_ext, selected_game_version, info):
+                        raise modpack_downloader.DownloadError(
+                            i18n_message("download.mod.incompatibleFile", {
+                                "version": selected_game_version
+                            }))
                 else:
-                    main_file = next(
-                        (f for f in info.files if f.file_type == "main"), None) \
-                        or (info.files[0] if info.files else None)
+                    # Przy aktywnym filtrze wersji nie wolno brać "pierwszego"
+                    # pliku. Wybieramy wyłącznie plik rozpoznany jako zgodny.
+                    if selected_game_version:
+                        compatible_files = [
+                            f for f in info.files
+                            if self._file_matches_selected_game_version(
+                                f, selected_game_version, info)
+                        ]
+                        if compatible_files:
+                            main_file = next(
+                                (f for f in compatible_files if f.file_type == "main"),
+                                compatible_files[0],
+                            )
+                        else:
+                            compatible_external = [
+                                link for link in info.external_links
+                                if self._external_matches_selected_game_version(
+                                    link, selected_game_version, info)
+                            ]
+                            if not compatible_external:
+                                raise modpack_downloader.DownloadError(
+                                    i18n_message("download.mod.noCompatibleFile", {
+                                        "version": selected_game_version
+                                    }))
+                            chosen_ext = compatible_external[0]
+                    else:
+                        detected = {
+                            version
+                            for file in info.files
+                            for version in detect_file_game_versions(
+                                label=file.label,
+                                filename=file.filename,
+                                mod_version=file.version,
+                            )
+                        }
+                        detected.update(
+                            version
+                            for link in info.external_links
+                            for version in detect_file_game_versions(
+                                label=link.label,
+                                filename="",
+                                mod_version=link.version,
+                            )
+                        )
+                        if len(detected) > 1:
+                            raise modpack_downloader.DownloadError(
+                                i18n_message("download.mod.selectGameVersion")
+                            )
+                        main_file = next(
+                            (f for f in info.files if f.file_type == "main"), None) \
+                            or (info.files[0] if info.files else None)
 
                 version = re.sub(r"[^\w.-]+", "_",
                                  (main_file.version if main_file else None)

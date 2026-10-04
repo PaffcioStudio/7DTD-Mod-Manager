@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import os
 import re
 import time
@@ -24,6 +25,171 @@ USER_AGENT = (
 )
 
 ProgressCallback = Callable[[int, int], None]  # (pobrane_bajty, calkowite_bajty)
+
+
+# Oznaczenia wersji gry używane przez autorów plików na 7daystodiemods.com.
+# Nie wolno traktować pierwszego "V6"/"V5.1.0" w nazwie jako wersji gry:
+# bardzo często jest to wersja samego moda, a właściwa wersja gry występuje
+# po "for" / "compatible with" (np. "V6 for V1.4 b8", "V5.1.0 for A21.2").
+_GAME_VERSION_TOKEN_RE = re.compile(
+    r"(?<![a-z0-9])(?:alpha|a)\s*(\d+(?:\.\d+)*)|"
+    r"(?<![a-z0-9])v\s*(\d+(?:\.\d+)*)",
+    re.IGNORECASE,
+)
+
+_GAME_VERSION_CONTEXT_RE = re.compile(
+    r"\b(?:for|compatible\s+with|supports?|game\s+versions?|game\s+version)\b"
+    r"[^;\n]{0,80}",
+    re.IGNORECASE,
+)
+
+
+def _normalize_detected_game_version(value: str) -> str:
+    """Normalizuje oznaczenie z nazwy pliku do ``vN[.x]`` albo ``alphaN[.x]``."""
+    raw = (value or "").strip().casefold()
+    raw = re.sub(r"[^a-z0-9.]+", "", raw)
+    match = re.fullmatch(r"(alpha|a)(\d+(?:\.\d+)*)", raw)
+    if match:
+        return f"alpha{match.group(2)}"
+    match = re.fullmatch(r"v(\d+(?:\.\d+)*)", raw)
+    if match:
+        return f"v{match.group(1)}"
+    return ""
+
+
+def _game_version_family(value: str) -> tuple[str, tuple[int, ...]] | None:
+    normalized = _normalize_detected_game_version(value)
+    if not normalized:
+        return None
+    kind = "alpha" if normalized.startswith("alpha") else "v"
+    number = normalized[len(kind):]
+    return kind, tuple(int(part) for part in number.split("."))
+
+
+def detect_file_game_versions(
+    label: str = "",
+    filename: str = "",
+    declared_versions: list[str] | tuple[str, ...] | None = None,
+    mod_version: str | None = None,
+) -> list[str]:
+    """Wykrywa wersje gry z nazwy/etykiety pliku.
+
+    Priorytet ma informacja strukturalna ``declared_versions``. Jeżeli jej
+    brakuje, najpierw szukamy oznaczeń w kontekście "for"/"compatible with".
+    Dopiero gdy takiego kontekstu nie ma, używamy wszystkich oznaczeń V*/A*.
+    Dzięki temu "Darkness Falls V6 for V1.4 b8" daje ``v1.4``, a nie ``v6``.
+    """
+    structural = []
+    for value in declared_versions or ():
+        normalized = _normalize_detected_game_version(str(value))
+        if normalized and normalized not in structural:
+            structural.append(normalized)
+    if structural:
+        return structural
+
+    text = f"{label or ''} {filename or ''}".strip()
+    if not text:
+        return []
+
+    contextual = []
+    for match in _GAME_VERSION_CONTEXT_RE.finditer(text):
+        for token_match in _GAME_VERSION_TOKEN_RE.finditer(match.group(0)):
+            prefix = token_match.group(0).strip().casefold()
+            number = token_match.group(1) or token_match.group(2)
+            canonical = (
+                f"alpha{number}" if prefix.startswith(("alpha", "a"))
+                else f"v{number}"
+            )
+            if canonical not in contextual:
+                contextual.append(canonical)
+    if contextual:
+        return contextual
+
+    mod_tokens = set()
+    if mod_version:
+        mod_text = str(mod_version).strip()
+        for token_match in _GAME_VERSION_TOKEN_RE.finditer(mod_text):
+            prefix = token_match.group(0).strip().casefold()
+            number = token_match.group(1) or token_match.group(2)
+            mod_tokens.add(
+                f"alpha{number}" if prefix.startswith(("alpha", "a"))
+                else f"v{number}"
+            )
+        # API często przechowuje sam numer wersji moda bez litery V.
+        # "6.0.0-DEV" może więc odpowiadać "V6" w etykiecie pliku.
+        bare = re.match(r"^(\d+)(?:\.\d+)*", mod_text)
+        if bare:
+            mod_tokens.add(f"v{bare.group(0)}")
+            mod_tokens.add(f"v{bare.group(1)}")
+
+    detected = []
+    for match in _GAME_VERSION_TOKEN_RE.finditer(text):
+        prefix = match.group(0).strip().casefold()
+        number = match.group(1) or match.group(2)
+        canonical = (
+            f"alpha{number}" if prefix.startswith(("alpha", "a"))
+            else f"v{number}"
+        )
+        if canonical in mod_tokens or (
+            canonical.startswith("v")
+            and any(
+                token.startswith("v")
+                and token[len("v"):].split(".")[0]
+                == canonical[len("v"):].split(".")[0]
+                for token in mod_tokens
+            )
+        ):
+            continue
+        if canonical not in detected:
+            detected.append(canonical)
+    return detected
+
+
+def game_version_matches(selected: str, detected_versions: list[str] | tuple[str, ...]) -> bool:
+    """Czy plik opisany ``detected_versions`` pasuje do wybranej wersji gry.
+
+    Wersja bez patcha (np. ``v1`` / ``alpha21``) oznacza całą rodzinę.
+    Wersja konkretna (np. ``v1.4`` / ``alpha21.2``) akceptuje dokładne
+    oznaczenie albo szersze oznaczenie rodziny z pliku.
+    """
+    selected_info = _game_version_family(selected)
+    if selected_info is None:
+        return False
+    selected_kind, selected_parts = selected_info
+
+    for candidate in detected_versions:
+        candidate_info = _game_version_family(candidate)
+        if candidate_info is None:
+            continue
+        candidate_kind, candidate_parts = candidate_info
+        if candidate_kind != selected_kind:
+            continue
+
+        if candidate_parts == selected_parts:
+            return True
+
+        # Kandydat "v1"/"alpha21" jest szeroką deklaracją i pasuje również
+        # do konkretnego patcha. Odwrotna sytuacja nie jest bezpieczna.
+        if len(candidate_parts) == 1 and candidate_parts[0] == selected_parts[0]:
+            return True
+
+        # Jeżeli użytkownik wybrał rodzinę (v1 / alpha21), każdy jej
+        # konkretny patch również jest kompatybilny.
+        if len(selected_parts) == 1 and candidate_parts[:1] == selected_parts[:1]:
+            return True
+    return False
+
+
+def mod_file_matches_game_version(
+    file: "ModFile",
+    selected_game_version: str,
+) -> bool:
+    """Bezpieczne sprawdzenie konkretnego ``ModFile`` względem wersji gry."""
+    detected = detect_file_game_versions(
+        label=file.label,
+        filename=file.filename,
+    )
+    return game_version_matches(selected_game_version, detected)
 
 
 @dataclass
@@ -91,8 +257,81 @@ GITLAB_REPO_RE = re.compile(
     re.I,
 )
 
+# MediaFire share/download pages. Zwykły link współdzielony nie kończy się
+# na .zip, więc musi zostać rozwiązany do tymczasowego hosta
+# download<NNNN>.mediafire.com przed przekazaniem do streamera HTTP.
+_MEDIAFIRE_HOST_RE = re.compile(r"^(?:www\.)?mediafire\.com$", re.I)
+_MEDIAFIRE_SHARED_PATH_RE = re.compile(
+    r"^/(?:file|view|download)/[^?#]+(?:/[^?#]*)?/?$", re.I
+)
+_MEDIAFIRE_DIRECT_RE = re.compile(
+    r"(?P<url>(?:https?:)?//download\d+\.mediafire\.com/[^\"'<>\s\\]+)",
+    re.I,
+)
+_MEDIAFIRE_SIZE_META_RE = re.compile(
+    r'<meta[^>]+(?:property|name)=[\"\']og:filesize[\"\'][^>]+content=[\"\'](\d+)',
+    re.I,
+)
+
 # https://mediafilez.forgecdn.net/files/<file_id // 1000>/<file_id % 1000>/<nazwa>
 FORGECDN_URL = "https://mediafilez.forgecdn.net/files/{major}/{minor}/{name}"
+
+
+def _is_mediafire_share_url(url: str) -> bool:
+    """Czy URL jest publiczną stroną pliku MediaFire (nie linkiem CDN)."""
+    try:
+        parts = urlsplit((url or "").strip())
+        if parts.scheme.lower() not in {"http", "https"}:
+            return False
+        if not _MEDIAFIRE_HOST_RE.fullmatch(parts.netloc.lower()):
+            return False
+        path = parts.path or "/"
+        if _MEDIAFIRE_SHARED_PATH_RE.fullmatch(path):
+            return True
+        # Starszy format MediaFire: https://www.mediafire.com/?<file_id>
+        return path == "/" and bool(parts.query) and bool(re.fullmatch(r"[A-Za-z0-9]+", parts.query))
+    except ValueError:
+        return False
+
+
+def _extract_mediafire_direct_url(page_html: str) -> str | None:
+    """Wyciąga tymczasowy URL CDN z HTML strony MediaFire.
+
+    MediaFire pokazuje użytkownikowi stronę /file/.../file, ale w jej HTML
+    umieszcza odnośnik prowadzący do ``downloadNNNN.mediafire.com``. Ten host
+    jest zmienny i link jest czasowy, dlatego rozwiązujemy go dopiero tuż przed
+    pobraniem i nie zapisujemy go jako stałego adresu moda.
+    """
+    if not page_html:
+        return None
+    # Niektóre warianty strony mają escaped slashe w JS. HTML-unescape naprawia
+    # też ewentualne &amp; w query stringu.
+    text = html.unescape(page_html).replace(r"\/", "/")
+    match = _MEDIAFIRE_DIRECT_RE.search(text)
+    if not match:
+        return None
+    candidate = match.group("url")
+    if candidate.startswith("//"):
+        candidate = "https:" + candidate
+    return candidate
+
+
+def _mediafire_filename_from_url(url: str) -> str:
+    from urllib.parse import unquote_plus
+
+    name = unquote_plus(os.path.basename(urlsplit(url).path))
+    return name or "mediafire-download.zip"
+
+
+def _mediafire_size_from_html(page_html: str) -> int:
+    """Spróbuj odczytać surowy rozmiar z meta tagu, inaczej 0 (unknown)."""
+    match = _MEDIAFIRE_SIZE_META_RE.search(html.unescape(page_html or ""))
+    if not match:
+        return 0
+    try:
+        return max(0, int(match.group(1)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _filename_with_direct_suffix(text: str | None) -> str | None:
@@ -125,7 +364,7 @@ class ExternalLink:
 
     @property
     def filename(self) -> str:
-        from urllib.parse import urlparse, unquote
+        from urllib.parse import urlparse, unquote_plus
 
         # autorzy wpisują w label realną nazwę pliku nawet, gdy URL prowadzi
         # do strony (np. CurseForge) - wtedy to lepsze źródło niż ścieżka URL
@@ -134,7 +373,7 @@ class ExternalLink:
             return name
         if _is_azure_items_zip_url(self.url):
             return "azure-repository.zip"
-        name = unquote(os.path.basename(urlparse(self.url).path))
+        name = unquote_plus(os.path.basename(urlparse(self.url).path))
         return name or re.sub(r"[^\w.-]+", "_", self.label or "download")
 
 
@@ -372,15 +611,27 @@ class SevenDaysModsClient:
         for raw in mod.get("mod_files") or []:
             if not isinstance(raw, dict) or not raw.get("id"):
                 continue
+            filename = raw.get("filename") or ""
+            label = raw.get("label") or filename
+            declared = raw.get("game_versions")
+            if not isinstance(declared, (list, tuple)):
+                declared = raw.get("game_version")
+                declared = [declared] if declared else []
             files.append({
                 "kind": "hosted",
                 "id": raw["id"],
-                "filename": raw.get("filename") or "",
-                "label": raw.get("label") or raw.get("filename"),
+                "filename": filename,
+                "label": label,
                 "file_type": raw.get("file_type") or "main",
                 "version": raw.get("mod_version"),
                 "size_bytes": int(raw.get("size") or 0),
                 "verified": raw.get("scan_status") == "clean",
+                "detected_game_versions": detect_file_game_versions(
+                    label=label,
+                    filename=filename,
+                    declared_versions=declared,
+                    mod_version=raw.get("mod_version"),
+                ),
                 "download_url": None,  # podpisany URL dopiero z flagą --resolve
             })
 
@@ -388,13 +639,28 @@ class SevenDaysModsClient:
         for raw in mod.get("external_links") or []:
             if not isinstance(raw, dict) or not raw.get("id") or not raw.get("url"):
                 continue
+            label = raw.get("label") or raw["url"]
             external.append({
                 "kind": "external",
                 "id": raw["id"],
-                "label": raw.get("label") or raw["url"],
+                "label": label,
                 "url": raw["url"],
                 "file_type": raw.get("file_type") or "external",
                 "version": raw.get("mod_version"),
+                "detected_game_versions": detect_file_game_versions(
+                    label=label,
+                    # URL hostera może zawierać numer wersji samego moda
+                    # (np. MediaFire: ``...V2.6...``), więc nie używamy go jako
+                    # źródła wersji gry. Wersję pobieramy z nazwy/etykiety linku,
+                    # danych strukturalnych lub deklaracji całego moda.
+                    filename="",
+                    declared_versions=(
+                        raw.get("game_versions")
+                        if isinstance(raw.get("game_versions"), (list, tuple))
+                        else [raw.get("game_version")] if raw.get("game_version") else []
+                    ),
+                    mod_version=raw.get("mod_version"),
+                ),
             })
 
         gallery = [
@@ -514,6 +780,9 @@ class SevenDaysModsClient:
         albo None, gdy się nie da.
 
         Obsługiwane:
+        - MediaFire (strona ``/file/.../file``) - GET strony i wyciągnięcie
+          czasowego linku CDN ``downloadNNNN.mediafire.com`` z HTML; adres nie
+          jest przechowywany trwale, tylko rozwiązywany tuż przed pobraniem,
         - CurseForge ``/download/<file_id>`` - strona samego curseforge.com
           jest za Cloudflare (challenge dla zwykłych requestów), ale pliki
           leżą jawnie na mediafilez.forgecdn.net pod adresem wyliczanym z
@@ -527,6 +796,32 @@ class SevenDaysModsClient:
           repo jako ZIP przez ``/-/archive/<default_branch>/...`` (domyślna
           gałąź z API v4; archiwa GitLab są generowane na locie, więc bez
           z góry znanej długości)."""
+        if _is_mediafire_share_url(link.url):
+            try:
+                resp = self.session.get(
+                    link.url.strip(),
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    headers={
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Referer": f"{BASE_URL}/",
+                    },
+                )
+            except requests.RequestException:
+                return None
+            if resp.status_code != 200:
+                return None
+            direct = _extract_mediafire_direct_url(resp.text)
+            if not direct:
+                return None
+            name = _mediafire_filename_from_url(direct)
+            # Nie pozwalamy później pobrać strony HTML pod błędnym odnośnikiem.
+            # MediaFire powinien wskazywać prawdziwe archiwum; końcówka .zip
+            # jest też potrzebna do obecnego walidatora instalacji.
+            if not name.lower().endswith(".zip"):
+                return None
+            return direct, _mediafire_size_from_html(resp.text), name
+
         gh = GITHUB_REPO_RE.fullmatch(link.url.strip().rstrip("/"))
         if gh:
             owner, repo = gh.group(1), gh.group(2)

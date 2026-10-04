@@ -32,3 +32,14 @@ def test_discover_initial_state_reads_saved_full_filter_set():
     assert 'property string version: Settings.discoverDefaultVersion' in text
     assert 'property string createdAfter: Settings.discoverDefaultCreatedAfter' in text
     assert 'property bool includeAdult: Settings.discoverDefaultIncludeAdult' in text
+
+
+def test_web_mod_drawer_blocks_downloads_that_do_not_match_selected_game_version():
+    text = (Path(__file__).resolve().parents[1] / "qml/components/WebModDrawer.qml").read_text(encoding="utf-8")
+    assert "detectedGameVersions" in text
+    assert "fileAllowedForSelection" in text
+    assert "rowCompatible" in text
+    assert "|| !rowCompatible" in text
+    assert 'I18n.t("discover.drawer.fileVersionUnknown")' in text
+    assert 'I18n.format("discover.drawer.fileIncompatible"' in text
+    assert 'implicitHeight: fileRow.rowCompatible ? 58 : 78' in text

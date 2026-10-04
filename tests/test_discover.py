@@ -169,5 +169,149 @@ class AzureExternalDownloadTests(unittest.TestCase):
         self.assertEqual(name, "azure-repository.zip")
 
 
+
+class GameVersionFileDetectionTests(unittest.TestCase):
+
+    def test_detects_game_version_after_for_and_ignores_mod_version(self):
+        from backend.scraper_client import detect_file_game_versions
+
+        detected = detect_file_game_versions(
+            label="Darkness Falls V6 for V1.4 b8 (V1)"
+        )
+        self.assertIn("v1.4", detected)
+        self.assertNotIn("v6", detected)
+
+    def test_mod_version_is_not_mistaken_for_game_version(self):
+        from backend.scraper_client import detect_file_game_versions
+
+        detected = detect_file_game_versions(
+            label="Darkness Falls V6",
+            filename="DarknessFallsV6.zip",
+            mod_version="6.0.0-DEV-B20",
+        )
+        self.assertEqual(detected, [])
+
+    def test_detects_alpha21_even_when_author_uses_short_a21_name(self):
+        from backend.scraper_client import detect_file_game_versions
+
+        detected = detect_file_game_versions(
+            label="Darkness Falls V5.1.0 for A21.2 (Alpha 21)"
+        )
+        self.assertEqual(detected, ["alpha21.2", "alpha21"])
+
+    def test_matches_broad_game_filter_to_specific_patch(self):
+        from backend.scraper_client import game_version_matches
+
+        self.assertTrue(game_version_matches("alpha21", ["alpha21.2"]))
+        self.assertTrue(game_version_matches("v1", ["v1.4"]))
+        self.assertTrue(game_version_matches("v1.4", ["v1"]))
+        self.assertFalse(game_version_matches("alpha21", ["v1.4"]))
+        self.assertFalse(game_version_matches("v1.4", ["v1.3"]))
+
+    def test_unknown_file_is_not_safe_when_mod_supports_multiple_game_versions(self):
+        from backend.download_manager import DownloadManager
+        from backend.scraper_client import ModFile
+
+        class Info:
+            game_versions = ["V1 Mods", "Alpha 21"]
+
+        file = ModFile(
+            id="1", media_id="", filename="DarknessFalls.zip", size=1,
+            label="Darkness Falls release", file_type="main", version="6.0",
+            scan_status="clean"
+        )
+        self.assertFalse(
+            DownloadManager._file_matches_selected_game_version(
+                file, "alpha21", Info()
+            )
+        )
+
+    def test_unknown_file_can_use_single_declared_mod_version(self):
+        from backend.download_manager import DownloadManager
+        from backend.scraper_client import ModFile
+
+        class Info:
+            game_versions = ["Alpha 21"]
+
+        file = ModFile(
+            id="1", media_id="", filename="release.zip", size=1,
+            label="Release", file_type="main", version="1.0",
+            scan_status="clean"
+        )
+        self.assertTrue(
+            DownloadManager._file_matches_selected_game_version(
+                file, "alpha21", Info()
+            )
+        )
+
+
+class MediaFireExternalDownloadTests(unittest.TestCase):
+    MEDIAFIRE_URL = (
+        "https://www.mediafire.com/file/gm61vfy91x5l3lq/"
+        "Your_End_2.4.1.7_Stable_V2.6%2528b14%2529.zip/file"
+    )
+    DIRECT_URL = (
+        "https://download1581.mediafire.com/vuix0j7isrigbatyCMemR95GQPpCcEFgywG1vs8rOxqHlHPjlWCv_xtDNSPKWN5kDmWwmQz0qi9qj-M97BZRYepMs1EAYeZ8iGjsAdszGXlruThN6_O0PVvPEIzE-qdy_Mxajj-2IGPFrbizY68JTIiIJPfsONGpnFeClAz_hWef/"
+        "gm61vfy91x5l3lq/Your+End+2.4.1.7+Stable+V2.6%28b14%29.zip"
+    )
+
+    def test_mediafire_share_url_is_not_mistaken_for_direct_zip(self):
+        from backend.scraper_client import ExternalLink, _is_mediafire_share_url
+
+        link = ExternalLink("mf", self.MEDIAFIRE_URL, "Your End 2.4.1.7 Stable V2.6(b14).zip")
+        self.assertTrue(_is_mediafire_share_url(self.MEDIAFIRE_URL))
+        self.assertFalse(link.is_direct_file)
+
+    def test_mediafire_html_resolves_to_temporary_download_host(self):
+        from backend.scraper_client import ExternalLink, SevenDaysModsClient
+
+        html = (
+            '<html><a id="downloadButton" href="'
+            + self.DIRECT_URL
+            + '">Download</a></html>'
+        )
+        response = Mock(status_code=200, text=html)
+        client = SevenDaysModsClient()
+        client.session.get = Mock(return_value=response)
+        link = ExternalLink("mf", self.MEDIAFIRE_URL, "Your End 2.4.1.7 Stable V2.6(b14).zip")
+
+        url, size, name = client.resolve_external_url(link)
+
+        self.assertEqual(url, self.DIRECT_URL)
+        self.assertEqual(size, 0)
+        self.assertEqual(name, "Your End 2.4.1.7 Stable V2.6(b14).zip")
+        client.session.get.assert_called_once()
+
+    def test_mediafire_version_is_taken_from_file_label_not_hoster_url(self):
+        from backend.scraper_client import detect_file_game_versions
+
+        detected = detect_file_game_versions(
+            label="Your End 2.4.1.7 Stable V2.6(b14).zip",
+            filename="",
+            mod_version="2.6",
+        )
+        self.assertEqual(detected, [])
+
+    def test_mediafire_external_falls_back_to_single_declared_game_version(self):
+        from backend.download_manager import DownloadManager
+        from backend.scraper_client import ExternalLink
+
+        class Info:
+            game_versions = ["Alpha 21"]
+
+        link = ExternalLink(
+            "mf", self.MEDIAFIRE_URL,
+            "Your End 2.4.1.7 Stable V2.6(b14).zip",
+            version="2.6",
+        )
+        self.assertTrue(
+            DownloadManager._external_matches_selected_game_version(
+                link, "alpha21", Info()
+            )
+        )
+
+
+
+
 if __name__ == "__main__":
     unittest.main()
