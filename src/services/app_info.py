@@ -11,7 +11,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from services import filesystem_service as fs
 
 APP_NAME = "7 Days to Die - Menedżer modów"
-APP_VERSION = "1.0.43"
+APP_VERSION = "1.0.42"
 ORG_NAME = "7dtd-modmanager"
 
 

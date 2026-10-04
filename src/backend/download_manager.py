@@ -1936,6 +1936,7 @@ class DownloadManager(QObject):
     def _start_url_worker(self, item: DownloadItem) -> None:
         """Odpala wątek roboczy dla pozycji URL (promowanej z kolejki)."""
         cancel, pause = item.cancel_event, item.pause_event
+        temp_dir = item.temp_dir
 
         def progress(done: int, total: int, label: str) -> None:
             self.urlProgress.emit(item.id, done, total, label)

@@ -21,7 +21,7 @@ def _app():
 
 
 def test_app_version_bumped():
-    assert APP_VERSION == "1.0.43"
+    assert APP_VERSION == "1.0.42"
 
 
 def test_search_mod_online_builds_expected_7daystodiemods_url():

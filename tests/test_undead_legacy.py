@@ -21,3 +21,9 @@ def test_download_and_extract_resolves_undead_legacy_mirror_before_transfer():
         assert request_headers["User-Agent"].startswith("Mozilla/5.0 (X11; Linux x86_64; rv:156.0)")
         assert request_headers["Accept"] == "*/*"
         extract.assert_called_once()
+
+
+def test_url_worker_captures_download_temp_dir_before_async_worker_runs():
+    source = (Path(__file__).resolve().parents[1] / "src/backend/download_manager.py").read_text(encoding="utf-8")
+    assert "cancel, pause = item.cancel_event, item.pause_event\n        temp_dir = item.temp_dir" in source
+    assert "modpack_downloader.cleanup_temp_dir(temp_dir)" in source
