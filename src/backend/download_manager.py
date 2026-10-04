@@ -1167,7 +1167,9 @@ class DownloadManager(QObject):
             kind="url",
             ref_id=url,
             title=title,
-            subtitle=f"Overhaul · {modpack_downloader.source_kind_label(kind)}",
+            subtitle=i18n_message("download.overhaul.source", {
+                "source": modpack_downloader.source_kind_label(kind),
+            }),
             total_bytes=0,   # nieznany do pierwszego nagłówka HTTP
             status="queued",
             real=True,

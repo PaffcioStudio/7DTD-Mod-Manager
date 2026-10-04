@@ -184,6 +184,7 @@ def _http_download_file(
     cancel_event=None,
     pause_event=None,
     label: str = "",
+    request_headers: Optional[dict[str, str]] = None,
 ) -> None:
     """Pobiera plik HTTP do dest, z PAUZĄ (DownloadPaused, .part zostaje)
     i WZNOWIENIEM przez HTTP Range. Serwer ignorujący Range odpowie 200
@@ -199,6 +200,8 @@ def _http_download_file(
             raise DownloadPaused(label)
 
         headers = {"User-Agent": USER_AGENT}
+        if request_headers:
+            headers.update({str(k): str(v) for k, v in request_headers.items()})
         if downloaded:
             headers["Range"] = f"bytes={downloaded}-"
         request = urllib.request.Request(url, headers=headers)
@@ -401,10 +404,27 @@ def download_and_extract(
             zip_path.unlink(missing_ok=True)
         elif kind in (DownloadSourceKind.DIRECT_ZIP, DownloadSourceKind.UNDEAD_LEGACY_MIRROR):
             zip_path = temp_dir / "download.zip"
-            resolved_url = resolve_mirror_url(url) if kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR else url
+            resolved_url = url
+            request_headers = None
+            if kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
+                # Dropbox blocks the follow-up request when the signed URL is
+                # fetched without the same referrer/browser context that was
+                # used to resolve the public Undead Legacy mirror. Resolve the
+                # current signed URL immediately before every transfer attempt
+                # and keep that context on the actual ZIP request.
+                resolved_url = resolve_mirror_url(url)
+                request_headers = {
+                    "User-Agent": (
+                        "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) "
+                        "Gecko/20100101 Firefox/156.0"
+                    ),
+                    "Referer": "https://ul.subquake.com/",
+                    "Accept": "*/*",
+                }
             _http_download_file(
                 resolved_url, zip_path, progress_cb=progress_cb,
                 cancel_event=cancel_event, pause_event=pause_event,
+                request_headers=request_headers,
             )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             zip_path.unlink(missing_ok=True)
