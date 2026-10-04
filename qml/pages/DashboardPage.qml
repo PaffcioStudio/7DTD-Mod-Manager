@@ -32,6 +32,11 @@ PageShell {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Dimensions.spacingXxl
 
+            PageDescription {
+                text: I18n.t("dashboard.subtitle")
+                maxTextWidth: 700
+            }
+
             // ---- hero ---------------------------------------------------- #
             HeroCard {
                 Layout.fillWidth: true

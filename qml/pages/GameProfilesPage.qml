@@ -32,6 +32,13 @@ PageShell {
         spacing: Dimensions.spacingLg
         enabled: !Game.isRunning
 
+        PageDescription {
+            text: GameProfiles.count > 0
+                  ? I18n.format("gameProfiles.subtitle.count", {count: GameProfiles.count})
+                  : I18n.t("gameProfiles.subtitle.none")
+            maxTextWidth: 760
+        }
+
         RowLayout {
             Layout.fillWidth: true
 

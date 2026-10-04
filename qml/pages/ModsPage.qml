@@ -78,7 +78,14 @@ PageShell {
         anchors.bottomMargin: 0
         spacing: Dimensions.spacingLg
 
-        // actions row - page title/subtitle are already provided by AppHeader
+        // Page title is provided by AppHeader; the description stays in-page.
+
+        PageDescription {
+            text: I18n.format("mods.caption", {shown: Mods.totalMods, total: Mods.totalMods, enabled: Mods.enabledCount})
+            maxTextWidth: 760
+        }
+
+        // actions row
         RowLayout {
             Layout.fillWidth: true
             spacing: 16

@@ -847,6 +847,85 @@ class GameVersionDownloadQueue(unittest.TestCase):
         self.assertEqual(item.total_bytes, total)
         self.assertEqual(item.kind, "game")
 
+    def test_failed_game_download_is_reused_on_second_attempt(self):
+        from PySide6.QtCore import QCoreApplication, QObject
+        from backend.download_manager import DownloadManager, DownloadListModel
+        from backend.events import EventBus
+
+        app = QCoreApplication.instance() or QCoreApplication([])
+        downloads = DownloadManager.__new__(DownloadManager)
+        QObject.__init__(downloads)
+        downloads._model = DownloadListModel(downloads)
+        downloads._last_queue_json = ""
+        downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
+        downloads._bus = EventBus()
+        downloads.startGameVersionDownload("alpha21.2", 100)
+        item = downloads._model.items[0]
+        downloads.finishGameVersionDownload("alpha21.2", "failed", "pierwsza próba")
+        self.assertEqual(item.status, "failed")
+        downloads.startGameVersionDownload("alpha21.2", 100)
+        self.assertEqual(downloads._model.rowCount(), 1)
+        self.assertEqual(item.status, "downloading")
+        downloads.updateGameVersionDownload("alpha21.2", 12.5, "Pobieram plik")
+        self.assertAlmostEqual(item.progress, 0.125, places=3)
+
+    def test_game_resume_does_not_start_http_worker(self):
+        from PySide6.QtCore import QCoreApplication, QObject
+        from backend.download_manager import DownloadManager, DownloadListModel
+        from backend.events import EventBus
+
+        app = QCoreApplication.instance() or QCoreApplication([])
+        downloads = DownloadManager.__new__(DownloadManager)
+        QObject.__init__(downloads)
+        downloads._model = DownloadListModel(downloads)
+        downloads._last_queue_json = ""
+        downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
+        downloads._bus = EventBus()
+        class Owner:
+            def __init__(self):
+                self.calls = []
+            def resume(self, branch): self.calls.append(("resume", branch))
+
+        owner = Owner()
+        downloads.setGameVersionsManager(owner)
+        downloads.startGameVersionDownload("alpha21.2", 100)
+        item = downloads._model.items[0]
+        item.status = "paused"
+        downloads._start_url_worker = lambda _item: self.fail("game download entered HTTP worker pool")
+        downloads.resumeAt(item.id)
+        self.assertEqual(owner.calls, [("resume", "alpha21.2")])
+        self.assertEqual(item.status, "queued")
+
+    def test_game_cancel_and_pause_are_forwarded_to_owner(self):
+        from PySide6.QtCore import QCoreApplication, QObject
+        from backend.download_manager import DownloadManager, DownloadListModel
+        from backend.events import EventBus
+
+        app = QCoreApplication.instance() or QCoreApplication([])
+        downloads = DownloadManager.__new__(DownloadManager)
+        QObject.__init__(downloads)
+        downloads._model = DownloadListModel(downloads)
+        downloads._last_queue_json = ""
+        downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
+        downloads._bus = EventBus()
+        class Owner:
+            def __init__(self):
+                self.calls = []
+            def pause(self): self.calls.append("pause")
+            def cancel(self): self.calls.append("cancel")
+            def resume(self, branch): self.calls.append(("resume", branch))
+        owner = Owner()
+        downloads.setGameVersionsManager(owner)
+        downloads.startGameVersionDownload("alpha21.2", 100)
+        item = downloads._model.items[0]
+        downloads.pauseAt(item.id)
+        self.assertEqual(owner.calls, ["pause"])
+        downloads.finishGameVersionDownload("alpha21.2", "paused", "")
+        downloads.resumeAt(item.id)
+        self.assertEqual(owner.calls[-1], ("resume", "alpha21.2"))
+        downloads.cancelAt(item.id)
+        self.assertEqual(owner.calls[-1], "cancel")
+
     def test_game_download_cancel_does_not_stay_as_active_queue_item(self):
         from PySide6.QtCore import QCoreApplication
         from backend.download_manager import DownloadManager

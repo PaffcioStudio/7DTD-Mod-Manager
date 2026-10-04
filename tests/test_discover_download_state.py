@@ -36,3 +36,26 @@ def test_queue_restart_keeps_history_without_treating_it_as_install_proof():
     assert 'if item.status == "completed" and item.kind != "mod":' in persist
     state = source[source.index("def modDownloads"):source.index("def activeMap")]
     assert "_completed_mod_is_still_installed(item)" in state
+
+
+def test_game_download_queue_is_persisted_and_not_started_by_http_pool():
+    source = (ROOT / "src" / "backend" / "download_manager.py").read_text(encoding="utf-8")
+    persist = source[source.index("def _persist_queue"):source.index("def _restore_queue")]
+    restore = source[source.index("def _restore_queue"):source.index("def reset_demo")]
+    promote = source[source.index("def _promote_queued"):source.index("def _on_completed")]
+    assert 'item.kind == "game"' not in persist.split('if not item.real', 1)[1].split('continue', 1)[0]
+    assert '"total_bytes": int(item.total_bytes or 0)' in persist
+    assert '"progress": float(item.progress)' in persist
+    assert 'if kind != "game" and not rec.get("url")' in restore
+    assert 'item.restored_from_queue = True' in restore
+    assert 'if item.kind == "game":' in promote
+    assert 'self._start_url_worker(item)' in promote
+
+
+def test_restored_game_downloads_have_explicit_auto_resume_hook():
+    source = (ROOT / "src" / "backend" / "download_manager.py").read_text(encoding="utf-8")
+    main = (ROOT / "src" / "main.py").read_text(encoding="utf-8")
+    assert "def resumeRestoredGameDownloads" in source
+    assert 'and i.restored_from_queue' in source
+    assert 'self._game_versions.resume(item.ref_id)' in source
+    assert 'QTimer.singleShot(0, downloads.resumeRestoredGameDownloads)' in main

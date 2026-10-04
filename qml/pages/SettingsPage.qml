@@ -322,6 +322,11 @@ PageShell {
                 width: Math.min(parent.width, page.currentSection === "about" ? 900 : 760)
                 spacing: 10
 
+                PageDescription {
+                    text: I18n.t("settings.subtitle")
+                    maxTextWidth: 760
+                }
+
                 // =========================================================== #
                 // GENERAL
                 // =========================================================== #

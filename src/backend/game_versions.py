@@ -457,6 +457,7 @@ class GameVersionsManager(QObject):
         self._process: subprocess.Popen | None = None
         self._worker_thread: threading.Thread | None = None
         self._cancel = threading.Event()
+        self._pause_requested = threading.Event()
         self._lock = threading.Lock()
         # Wątek roboczy (DepotDownloader) NIE może emitować sygnałów wprost:
         # bindingi QML podpięte do notify liczą się w wątku emitującym, co
@@ -1474,13 +1475,18 @@ class GameVersionsManager(QObject):
         self._set_qr("", use_qr)
         self._set_status(self._i18n_status("gameVersions.status.downloadingQr" if use_qr else "gameVersions.status.downloading", {"branch": branch}))
         self._cancel.clear()
+        self._pause_requested.clear()
         self._emit(self.changed)
         self._emit(self.gameDownloadStarted, branch, total_bytes)
 
         def worker():
             try:
                 error = self._run_depot(cmd, branch, self._i18n_status("gameVersions.status.downloadFinished", {"branch": branch}))
-                cancelled = self._cancel.is_set()
+                paused = self._pause_requested.is_set()
+                cancelled = self._cancel.is_set() and not paused
+                if paused:
+                    self._emit(self.gameDownloadFinished, branch, "paused", "")
+                    return
                 if cancelled:
                     self._emit(self.gameDownloadFinished, branch, "cancelled", "")
                     return
@@ -1623,8 +1629,30 @@ class GameVersionsManager(QObject):
             self._emit(self.changed)
 
     @Slot()
+    def pause(self) -> None:
+        """Wstrzymaj pobieranie gry, zachowując dane DepotDownloadera."""
+        if not self._busy or not self._download_branch:
+            return
+        self._pause_requested.set()
+        self._cancel.set()
+        threading.Thread(
+            target=self._terminate_process,
+            daemon=True,
+            name="DepotPause",
+        ).start()
+
+    @Slot(str)
+    def resume(self, branch: str) -> None:
+        """Wznów pobieranie brancha z istniejącego stagingu na dysku."""
+        branch = required_game_branch((branch or "").strip())
+        if not branch or self._busy:
+            return
+        self.download(branch)
+
+    @Slot()
     def cancel(self) -> None:
         """Przerwij bieżące pobieranie/autoryzację bez blokowania GUI."""
+        self._pause_requested.clear()
         self._cancel.set()
         # Nie czekamy na wait() w wątku GUI. Sam worker zobaczy _cancel, a
         # osobny krótki worker sprzątnie grupę procesów DepotDownloadera.

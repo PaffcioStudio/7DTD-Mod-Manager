@@ -48,6 +48,13 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
         // modale są poza tym layoutem - blokada nie dotyka ich samych
+
+        PageDescription {
+            text: I18n.t("backups.caption")
+            maxTextWidth: 760
+        }
+
+        // modale są poza tym layoutem - blokada nie dotyka ich samych
         enabled: !contentLocked
 
         RowLayout {

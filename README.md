@@ -58,9 +58,9 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 - Favourite instances stay at the top of the list and are protected from deletion until the favourite flag is removed.
 - Rename, duplicate, edit, activate, rebuild, open folders, and remove instances from one place.
 
-### Game versions and Steam
+### Steam releases and Steam
 
-- Download specific 7 Days to Die branches through DepotDownloader.
+- Download and manage specific 7 Days to Die Steam branches through DepotDownloader.
 - Keep downloaded branches isolated under `~/.7dtd_modmanager/game-versions/`.
 - Treat the normal Steam installation as a separate game source; a current Steam build is never assumed to be compatible with an older modded instance.
 - Check the required downloaded branch before launching an instance or downloading a source that requires a particular branch.
@@ -290,7 +290,7 @@ If `.venv` is missing, run:
 
 ### A required game branch is missing
 
-Open **Instances → Game Versions**, authenticate with Steam when required, and download the branch needed by the instance or mod source.
+Open **Steam Releases**, authenticate with Steam when required, and download the branch needed by the instance or mod source.
 
 ### Discover shows a package as downloaded even after deleting the instance
 

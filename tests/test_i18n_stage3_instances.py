@@ -4,13 +4,13 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTANCES = (ROOT / "qml/pages/ProfilesPage.qml").read_text(encoding="utf-8")
 INSTANCES_CODE = "\n".join(line.split("//", 1)[0] for line in INSTANCES.splitlines())
 CARD = (ROOT / "qml/components/ProfileCard.qml").read_text(encoding="utf-8")
-VERSIONS = (ROOT / "qml/components/GameVersionsModal.qml").read_text(encoding="utf-8")
+VERSIONS = (ROOT / "qml/pages/SteamReleasesPage.qml").read_text(encoding="utf-8")
 MAIN = (ROOT / "qml/Main.qml").read_text(encoding="utf-8")
 TRANSLATIONS = (ROOT / "qml/i18n/translations.js").read_text(encoding="utf-8")
 
 
 KEYS = (
-    "instances.title", "instances.subtitle", "instances.gameVersions",
+    "instances.title", "instances.subtitle",
     "instances.stopGame.title", "instances.stopGame.message", "instances.stopGame.confirm",
     "instances.newInstance", "instances.createNew", "instances.folderPicker.title",
     "instances.editor.editTitle", "instances.editor.newTitle", "instances.editor.newStatus",
@@ -50,15 +50,6 @@ KEYS = (
     "instances.profile.edit", "instances.profile.duplicateLocked", "instances.profile.duplicate",
     "instances.profile.removeLocked", "instances.profile.removeDefault",
     "instances.profile.removeFavoriteFirst", "instances.profile.remove", "instances.profile.new",
-    "gameVersions.title", "gameVersions.connectSteam", "gameVersions.qrHint",
-    "gameVersions.qrRefresh", "gameVersions.cancelAuth", "gameVersions.account",
-    "gameVersions.connected", "gameVersions.loggedInAs", "gameVersions.savedSession",
-    "gameVersions.relogin", "gameVersions.downloading", "gameVersions.downloadStatus",
-    "gameVersions.downloadCancel", "gameVersions.installedTitle", "gameVersions.installedCaption",
-    "gameVersions.installedBadge", "gameVersions.deleteInstalled", "gameVersions.availableTitle",
-    "gameVersions.availableCaption", "gameVersions.availableBadge", "gameVersions.stable",
-    "gameVersions.downloaded", "gameVersions.download", "gameVersions.loading",
-    "gameVersions.storageInfo", "gameVersions.refresh", "gameVersions.close",
 )
 
 
@@ -74,7 +65,7 @@ def test_instances_page_uses_translation_catalog_for_user_visible_text():
     assert 'I18n.format("instances.mod.toast"' in INSTANCES
 
     forbidden = (
-        '"Instancje"', '"Wersje gry"', '"Nowa instancja"',
+        '"Instancje"', '"Nowa instancja"',
         '"Wybierz katalog danych instancji"', '"Edytuj instancję"',
         '"Konfiguracja instancji"', '"Informacje"', '"Nazwa i opis"',
         '"Wersja gry (przypisana instancji)"', '"Domyślna (Steam)"',
@@ -113,23 +104,22 @@ def test_profile_card_uses_translation_catalog_for_labels_and_tooltips():
         assert phrase not in CARD, phrase
 
 
-def test_game_versions_modal_is_part_of_instances_i18n_stage():
+def test_steam_releases_page_is_its_own_i18n_surface():
     assert 'import "../i18n"' in VERSIONS
     for needle in (
-        'title: I18n.t("gameVersions.title")',
-        'I18n.t("gameVersions.connectSteam")',
-        'I18n.t("gameVersions.qrHint")',
-        'I18n.t("gameVersions.qrRefresh")',
-        'I18n.t("gameVersions.relogin")',
-        'I18n.format("gameVersions.downloading"',
-        'I18n.t("gameVersions.installedTitle")',
-        'I18n.t("gameVersions.availableTitle")',
-        'I18n.t("gameVersions.download")',
-        'I18n.t("gameVersions.refresh")',
-        'I18n.t("gameVersions.close")',
+        'pageName: "steam_releases"',
+        'I18n.t("steamReleases.connectSteam")',
+        'I18n.t("steamReleases.qrHint")',
+        'I18n.t("steamReleases.qrRefresh")',
+        'I18n.t("steamReleases.relogin")',
+        'I18n.format("steamReleases.downloading"',
+        'I18n.t("steamReleases.installedTitle")',
+        'I18n.t("steamReleases.availableTitle")',
+        'I18n.t("steamReleases.download")',
+        'I18n.t("steamReleases.refresh")',
     ):
         assert needle in VERSIONS, needle
 
 
 def test_main_instance_header_uses_i18n():
-    assert '"profiles": [I18n.t("instances.title"), I18n.t("instances.subtitle")]' in MAIN
+    assert '"profiles": I18n.t("instances.title")' in MAIN

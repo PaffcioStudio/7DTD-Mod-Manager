@@ -11,6 +11,7 @@ Item {
     signal resumeRequested()
     signal cancelRequested()
     signal retryRequested()
+    signal completedRequested()
 
     property string title: ""
     property string subtitle: ""
@@ -118,48 +119,76 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: 18
 
+                // The status line gets every pixel left after the fixed-width
+                // statistics block.  Keeping minimumWidth at zero is
+                // important: long localized ETA strings must never push into
+                // the downloaded/speed columns.
                 Text {
                     text: I18n.resolveMessage(root.subtitle)
                     color: Theme.textMuted
                     font.pixelSize: Typography.caption
                     font.family: Theme.fontFamily
                     elide: Text.ElideRight
+                    clip: true
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredWidth: 1
                 }
 
-                Text {
-                    text: root.downloadedText
-                    color: Theme.textSecondary
-                    font.pixelSize: Typography.caption
-                    font.family: Theme.fontFamily
-                }
-
-                Text {
-                    // Rezerwujemy stałą szerokość, dzięki czemu przejściowy
-                    // brak próbki prędkości nie przestawia całego wiersza.
+                // Download statistics use a dedicated layout block.  Each
+                // value has its own width and alignment so strings such as
+                // "17.2 GB / 15.9 GB", "8.1 MB/s" and "32 min 59 s remaining"
+                // remain visually separated in every supported language.
+                RowLayout {
+                    id: downloadStats
                     visible: root.busy
-                    text: root.speedText === "" || root.speedText === "-" ? "-" : root.speedText
-                    Layout.preferredWidth: 78
-                    horizontalAlignment: Text.AlignRight
-                    color: Theme.textSecondary
-                    font.pixelSize: Typography.caption
-                    font.family: Theme.fontFamily
-                }
+                    Layout.preferredWidth: 443
+                    Layout.minimumWidth: 330
+                    spacing: 18
 
-                Text {
-                    visible: root.busy
-                    text: root.etaSeconds > 0
-                        ? (root.etaSeconds < 60
-                            ? I18n.format("downloads.eta.seconds", {seconds: root.etaSeconds})
-                            : I18n.format("downloads.eta.minutes", {minutes: Math.floor(root.etaSeconds / 60), seconds: root.etaSeconds % 60}))
-                        : "-"
-                    Layout.preferredWidth: 92
-                    horizontalAlignment: Text.AlignRight
-                    color: Theme.textMuted
-                    font.pixelSize: Typography.caption
-                    font.family: Theme.fontFamily
+                    Text {
+                        text: root.downloadedText
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        elide: Text.ElideRight
+                        clip: true
+                        horizontalAlignment: Text.AlignRight
+                        Layout.preferredWidth: 140
+                        Layout.minimumWidth: 100
+                    }
+
+                    Text {
+                        // Rezerwujemy stałą szerokość, dzięki czemu przejściowy
+                        // brak próbki prędkości nie przestawia całego wiersza.
+                        text: root.speedText === "" || root.speedText === "-" ? "-" : root.speedText
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        elide: Text.ElideRight
+                        clip: true
+                        horizontalAlignment: Text.AlignRight
+                        Layout.preferredWidth: 100
+                        Layout.minimumWidth: 78
+                    }
+
+                    Text {
+                        text: root.etaSeconds > 0
+                            ? (root.etaSeconds < 60
+                                ? I18n.format("downloads.eta.seconds", {seconds: root.etaSeconds})
+                                : I18n.format("downloads.eta.minutes", {minutes: Math.floor(root.etaSeconds / 60), seconds: root.etaSeconds % 60}))
+                            : "-"
+                        Layout.preferredWidth: 167
+                        Layout.minimumWidth: 120
+                        horizontalAlignment: Text.AlignRight
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        elide: Text.ElideRight
+                        clip: true
+                    }
                 }
             }
         }
@@ -203,6 +232,7 @@ Item {
                 visible: root.completed
                 tint: Theme.success
                 hoverTint: Theme.success
+                onClicked: root.completedRequested()
             }
         }
     }

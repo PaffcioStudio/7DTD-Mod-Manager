@@ -74,4 +74,4 @@ def test_hero_card_uses_translation_keys_for_user_visible_text():
 
 
 def test_main_uses_i18n_for_dashboard_header():
-    assert '"dashboard": [I18n.t("dashboard.title"), I18n.t("dashboard.subtitle")]' in MAIN
+    assert '"dashboard": I18n.t("dashboard.title")' in MAIN

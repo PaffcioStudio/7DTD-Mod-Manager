@@ -110,14 +110,6 @@ PageShell {
         editorModal.open()
     }
 
-    function openGameVersions() {
-        gameVersionsModal.open()
-        Qt.callLater(() => {
-            if (!GameVersions.hasSavedSession && !GameVersions.busy)
-                GameVersions.startAuth()
-        })
-    }
-
     function saveEditor() {
         // idempotencja: podwójne zamknięcie (Esc/X + closeRequested) nie
         // może zapisać dwa razy
@@ -148,6 +140,12 @@ PageShell {
         anchors.margins: Dimensions.pagePad
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
+
+        PageDescription {
+            text: I18n.t("instances.subtitle")
+            maxTextWidth: 760
+        }
+
         // modale są poza tym layoutem - blokada nie dotyka ich samych
         enabled: !contentLocked
 
@@ -155,12 +153,6 @@ PageShell {
             Layout.fillWidth: true
 
             Item { Layout.fillWidth: true }
-
-            SecondaryButton {
-                text: I18n.t("instances.gameVersions")
-                icon: "download"
-                onClicked: gameVersionsModal.open()
-            }
 
             PrimaryButton {
                 text: Game.isRunning ? I18n.t("instances.stopGame.confirm") : I18n.t("instances.newInstance")
@@ -176,8 +168,6 @@ PageShell {
                 }
             }
         }
-
-        GameVersionsModal { id: gameVersionsModal }
 
         // ---- instance grid ---------------------------------------------- #
         AppScrollView {

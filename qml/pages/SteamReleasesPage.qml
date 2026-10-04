@@ -1,63 +1,112 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import "../components"
 import "../theme"
 import "../i18n"
 
-// Nowoczesny modal zarządzania wersjami gry Steam.
-//
-// Układ normalny:
-//   - pasek konta Steam
-//   - aktywne pobieranie
-//   - kompaktowa siatka pobranych wersji
-//   - lista dostępnych branchy Steam
-//
-// Pobieranie pozostaje niezależne od modala konta Steam; modal wersji gry
-// udostępnia pełne sterowanie pobieraniem wraz z anulowaniem.
-Modal {
-    id: root
-    title: I18n.t("gameVersions.title")
-    iconName: "download"
-    cardWidth: 900
+// Dedicated Steam release management area.
+// Backend operations continue to be owned by GameVersionsManager.
+PageShell {
+    id: page
+    pageName: "steam_releases"
+    maxWidth: 1080
+
+    property string pendingDeleteBranch: ""
 
     function fmtSize(bytes) {
-        if (!bytes || bytes <= 0) return ""
-        const gb = bytes / (1024 * 1024 * 1024)
-        return (gb >= 10 ? gb.toFixed(1) : gb.toFixed(2)) + " GB"
+        var value = Number(bytes)
+        if (!isFinite(value) || value <= 0)
+            return "0 B"
+
+        var units = ["B", "KB", "MB", "GB", "TB"]
+        var unitIndex = 0
+        while (value >= 1024 && unitIndex < units.length - 1) {
+            value /= 1024
+            unitIndex++
+        }
+
+        var decimals = unitIndex === 0 ? 0 : (value >= 100 ? 0 : (value >= 10 ? 1 : 2))
+        return value.toFixed(decimals) + " " + units[unitIndex]
     }
 
     function fmtDate(value) {
-        const raw = String(value || "").replace("T", " ")
-        if (!raw) return ""
-        return raw.length > 16 ? raw.slice(0, 16) : raw
+        if (value === undefined || value === null || String(value).trim() === "")
+            return ""
+        var date = new Date(value)
+        if (isNaN(date.getTime()))
+            return String(value)
+        return Qt.formatDateTime(date, "yyyy-MM-dd HH:mm")
     }
 
-    Component.onCompleted: GameVersions.refreshAvailable()
-
-    Connections {
-        target: GameVersions
-        function onVersionsChanged() { GameVersions.refreshAvailable() }
+    function openSteamArea() {
+        GameVersions.refreshAvailable()
+        if (!GameVersions.hasSavedSession && !GameVersions.busy)
+            GameVersions.startAuth()
     }
 
-    Connections {
-        target: root
-        function onOpenedChanged() {
-            if (!root.opened && GameVersions.busy && GameVersions.needsQr)
-                GameVersions.cancel()
+    function askDeleteRelease(branch) {
+        pendingDeleteBranch = branch
+        deleteInstalledModal.ask(
+            I18n.t("steamReleases.deleteTitle"),
+            I18n.format("steamReleases.deleteMessage", {branch: branch}),
+            I18n.t("steamReleases.deleteConfirm"),
+            true
+        )
+    }
+
+    ConfirmModal {
+        id: deleteInstalledModal
+        onConfirmed: {
+            const branch = page.pendingDeleteBranch
+            page.pendingDeleteBranch = ""
+            if (branch !== "")
+                GameVersions.deleteVersion(branch)
         }
+        onRejected: page.pendingDeleteBranch = ""
     }
 
-    // =========================== QR LOGIN ================================ #
+    onActiveChanged: {
+        if (active)
+            Qt.callLater(openSteamArea)
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: Dimensions.pagePad
+        anchors.topMargin: Dimensions.spacingLg
+        spacing: Dimensions.spacingMd
+
+        PageDescription {
+            text: I18n.t("steamReleases.subtitle")
+            maxTextWidth: 760
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+
+            Item { Layout.fillWidth: true }
+
+            SecondaryButton {
+                text: I18n.t("steamReleases.refresh")
+                icon: "refresh-cw"
+                enabled: !GameVersions.busy
+                onClicked: GameVersions.refreshAvailable()
+            }
+        }
+
+        // =========================== QR LOGIN ================================ #
     AppScrollView {
         visible: GameVersions.needsQr
         Layout.fillWidth: true
-        Layout.preferredHeight: 500
+        Layout.fillHeight: true
         showScrollBar: false
         contentHeight: qrCol.implicitHeight
 
         ColumnLayout {
             id: qrCol
             width: Math.max(0, parent.width - 48)
+            anchors.horizontalCenter: parent.horizontalCenter
             spacing: 14
 
             Rectangle {
@@ -98,14 +147,14 @@ Modal {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: I18n.t("gameVersions.connectSteam")
+                                text: I18n.t("steamReleases.connectSteam")
                                 color: Theme.text
                                 font.pixelSize: Typography.h2
                                 font.weight: Font.DemiBold
                                 font.family: Theme.fontFamily
                             }
                             Text {
-                                text: I18n.t("gameVersions.qrHint")
+                                text: I18n.t("steamReleases.qrHint")
                                 color: Theme.textMuted
                                 font.pixelSize: Typography.caption + 0.5
                                 font.family: Theme.fontFamily
@@ -137,7 +186,7 @@ Modal {
 
                     Text {
                         Layout.fillWidth: true
-                        text: I18n.t("gameVersions.qrRefresh")
+                        text: I18n.t("steamReleases.qrRefresh")
                         color: Theme.textSecondary
                         font.pixelSize: Typography.caption
                         font.family: Theme.fontFamily
@@ -148,23 +197,23 @@ Modal {
 
             SecondaryButton {
                 Layout.alignment: Qt.AlignRight
-                text: I18n.t("gameVersions.cancelAuth")
+                text: I18n.t("steamReleases.cancelAuth")
                 icon: "x"
                 onClicked: GameVersions.cancel()
             }
         }
     }
 
-    // =========================== NORMAL ================================ #
-    AppScrollView {
+            AppScrollView {
         visible: !GameVersions.needsQr
         Layout.fillWidth: true
-        Layout.preferredHeight: 560
+        Layout.fillHeight: true
         contentHeight: versionsCol.implicitHeight
 
         ColumnLayout {
             id: versionsCol
             width: Math.max(0, parent.width - 48)
+            anchors.horizontalCenter: parent.horizontalCenter
             spacing: 14
 
             // -------------------------- ACCOUNT --------------------------- #
@@ -200,7 +249,7 @@ Modal {
                             spacing: 8
 
                             Text {
-                                text: I18n.t("gameVersions.account")
+                                text: I18n.t("steamReleases.account")
                                 color: Theme.text
                                 font.pixelSize: Typography.body + 1
                                 font.weight: Font.DemiBold
@@ -209,15 +258,15 @@ Modal {
 
                             StatusBadge {
                                 key: "success"
-                                label: I18n.t("gameVersions.connected")
+                                label: I18n.t("steamReleases.connected")
                             }
                         }
 
                         Text {
                             Layout.fillWidth: true
                             text: GameVersions.steamUsername !== ""
-                                  ? I18n.format("gameVersions.loggedInAs", {username: GameVersions.steamUsername})
-                                  : I18n.t("gameVersions.savedSession")
+                                  ? I18n.format("steamReleases.loggedInAs", {username: GameVersions.steamUsername})
+                                  : I18n.t("steamReleases.savedSession")
                             color: Theme.textMuted
                             font.pixelSize: Typography.caption
                             font.family: Theme.fontFamily
@@ -226,7 +275,7 @@ Modal {
                     }
 
                     SecondaryButton {
-                        text: I18n.t("gameVersions.relogin")
+                        text: I18n.t("steamReleases.relogin")
                         icon: "user"
                         compact: true
                         enabled: !GameVersions.busy
@@ -267,7 +316,7 @@ Modal {
                         RowLayout {
                             Layout.fillWidth: true
                             Text {
-                                text: I18n.format("gameVersions.downloading", {branch: GameVersions.downloadingBranch})
+                                text: I18n.format("steamReleases.downloading", {branch: GameVersions.downloadingBranch})
                                 color: Theme.text
                                 font.pixelSize: Typography.body + 1
                                 font.weight: Font.DemiBold
@@ -293,7 +342,7 @@ Modal {
                         }
 
                         Text {
-                            text: GameVersions.status !== "" ? I18n.resolveMessage(GameVersions.status) : I18n.t("gameVersions.downloadStatus")
+                            text: GameVersions.status !== "" ? I18n.resolveMessage(GameVersions.status) : I18n.t("steamReleases.downloadStatus")
                             color: Theme.textMuted
                             font.pixelSize: Typography.caption
                             font.family: Theme.fontFamily
@@ -303,7 +352,7 @@ Modal {
                     }
 
                     SecondaryButton {
-                        text: I18n.t("gameVersions.downloadCancel")
+                        text: I18n.t("steamReleases.downloadCancel")
                         icon: "x"
                         compact: true
                         danger: true
@@ -348,11 +397,11 @@ Modal {
                 visible: GameVersions.versions.length > 0
 
                 SectionHeader {
-                    title: I18n.t("gameVersions.installedTitle")
-                    caption: I18n.t("gameVersions.installedCaption")
+                    title: I18n.t("steamReleases.installedTitle")
+                    caption: I18n.t("steamReleases.installedCaption")
                     StatusBadge {
                         key: "success"
-                        label: I18n.format("gameVersions.installedBadge", {count: GameVersions.versions.length})
+                        label: I18n.format("steamReleases.installedBadge", {count: GameVersions.versions.length})
                     }
                 }
 
@@ -418,9 +467,9 @@ Modal {
                                     iconSize: 13
                                     icon: "trash"
                                     danger: true
-                                    tooltip: I18n.t("gameVersions.deleteInstalled")
+                                    tooltip: I18n.t("steamReleases.deleteInstalled")
                                     enabled: !GameVersions.busy
-                                    onClicked: GameVersions.deleteVersion(installedCard.modelData.branch)
+                                    onClicked: page.askDeleteRelease(installedCard.modelData.branch)
                                 }
                             }
                         }
@@ -435,11 +484,11 @@ Modal {
                 visible: GameVersions.hasSavedSession && GameVersions.available.length > 0
 
                 SectionHeader {
-                    title: I18n.t("gameVersions.availableTitle")
-                    caption: I18n.t("gameVersions.availableCaption")
+                    title: I18n.t("steamReleases.availableTitle")
+                    caption: I18n.t("steamReleases.availableCaption")
                     StatusBadge {
                         key: "info"
-                        label: I18n.format("gameVersions.availableBadge", {count: GameVersions.available.length})
+                        label: I18n.format("steamReleases.availableBadge", {count: GameVersions.available.length})
                     }
                 }
 
@@ -510,7 +559,7 @@ Modal {
                                     StatusBadge {
                                         visible: branchRow.modelData.branch === "public"
                                         key: "update"
-                                        label: I18n.t("gameVersions.stable")
+                                        label: I18n.t("steamReleases.stable")
                                     }
                                 }
 
@@ -537,10 +586,10 @@ Modal {
                                 Layout.preferredWidth: 112
                                 Layout.minimumWidth: 112
                                 Layout.maximumWidth: 112
-                                text: branchRow.installed ? I18n.t("gameVersions.downloaded")
+                                text: branchRow.installed ? I18n.t("steamReleases.downloaded")
                                       : branchRow.downloading
                                         ? Math.round(GameVersions.progress) + "%"
-                                        : I18n.t("gameVersions.download")
+                                        : I18n.t("steamReleases.download")
                                 icon: branchRow.installed ? "check" : "download"
                                 busy: branchRow.downloading
                                 disabled: GameVersions.busy || branchRow.installed
@@ -557,7 +606,7 @@ Modal {
             Text {
                 Layout.fillWidth: true
                 visible: GameVersions.available.length === 0 && GameVersions.hasSavedSession
-                text: I18n.t("gameVersions.loading")
+                text: I18n.t("steamReleases.loading")
                 color: Theme.textMuted
                 font.pixelSize: Typography.caption
                 font.family: Theme.fontFamily
@@ -578,7 +627,7 @@ Modal {
                     Icon { name: "info"; size: 15; tint: Theme.textMuted }
                     Text {
                         Layout.fillWidth: true
-                        text: I18n.t("gameVersions.storageInfo")
+                        text: I18n.t("steamReleases.storageInfo")
                         color: Theme.textMuted
                         font.pixelSize: Typography.caption
                         font.family: Theme.fontFamily
@@ -588,18 +637,5 @@ Modal {
             }
         }
     }
-
-    footer: [
-        SecondaryButton {
-            text: I18n.t("gameVersions.refresh")
-            icon: "refresh-cw"
-            enabled: !GameVersions.busy
-            onClicked: GameVersions.refreshAvailable()
-        },
-        PrimaryButton {
-            text: I18n.t("gameVersions.close")
-            icon: "x"
-            onClicked: root.closeRequested()
-        }
-    ]
+    }
 }

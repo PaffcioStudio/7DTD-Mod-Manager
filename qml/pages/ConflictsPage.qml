@@ -16,6 +16,13 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
 
+        PageDescription {
+            text: Mods.conflictCount > 0
+                  ? I18n.format("conflicts.subtitle.withConflicts", {count: Mods.conflictCount})
+                  : I18n.t("conflicts.subtitle.none")
+            maxTextWidth: 760
+        }
+
         RowLayout {
             Layout.fillWidth: true
 

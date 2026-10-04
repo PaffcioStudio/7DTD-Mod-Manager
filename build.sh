@@ -26,6 +26,16 @@ fail()    { echo -e "${RED}[✗]${NC} $1"; }
 APP_ID="7dtd-mod-manager"
 DIST="$PROJECT_DIR/dist"
 BUILD="$PROJECT_DIR/.build"
+RELEASE_NOTES="$PROJECT_DIR/RELEASE_NOTES.md"
+DEFAULT_RELEASE_NOTES="If you run into any problems or bugs, please open an issue on GitHub. Include your app version, your Linux distro, and the relevant log from ~/.7dtd_modmanager/logs/."
+
+# RELEASE_NOTES.md is part of every source tree and every release.
+# Create the minimal file automatically when a local checkout is missing it;
+# the repository hygiene test still fails so the omission is visible in CI/tests.
+if [ ! -f "$RELEASE_NOTES" ]; then
+    printf '%s\n' "$DEFAULT_RELEASE_NOTES" > "$RELEASE_NOTES"
+    warn "Brak RELEASE_NOTES.md - utworzono domyślny plik"
+fi
 
 # Usage: ./build.sh [VERSION] [--install|-i]
 #   VERSION       e.g. 1.0.43 - written to src/services/app_info.py (and to

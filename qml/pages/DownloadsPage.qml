@@ -27,6 +27,13 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
 
+        PageDescription {
+            text: Downloads.activeCount > 0
+                  ? I18n.format("downloads.caption", {active: Downloads.activeCount, completed: Downloads.completedCount})
+                  : I18n.t("downloads.caption.none")
+            maxTextWidth: 760
+        }
+
         RowLayout {
             Layout.fillWidth: true
 
@@ -89,8 +96,8 @@ PageShell {
                     required property string speedText
                     required property string etaText
                     required property int etaSeconds
-                    property string statusKey: "downloading"
-                    property string statusText: ""
+                    required property string statusKey
+                    required property string statusText
                     required property string kind
                     required property bool pausable
 
@@ -118,6 +125,7 @@ PageShell {
                         onResumeRequested: Downloads.resumeAt(downloadDelegate.downloadId)
                         onCancelRequested: Downloads.cancelAt(downloadDelegate.downloadId)
                         onRetryRequested: Downloads.retryAt(downloadDelegate.downloadId)
+                        onCompletedRequested: Downloads.removeCompletedAt(downloadDelegate.downloadId)
                     }
                 }
             }
@@ -174,6 +182,7 @@ PageShell {
                         statusKey: "completed"
                         statusText: I18n.t("downloads.completed.status")
                         kind: completedDelegate.kind
+                        onCompletedRequested: Downloads.removeCompletedAt(completedDelegate.downloadId)
                     }
                 }
             }

@@ -51,11 +51,16 @@ ApplicationWindow {
     Binding { target: Dimensions; property: "scale"; value: Settings.uiScale }
     Binding { target: I18n; property: "language"; value: Settings.language }
 
-    // ---- page titles ------------------------------------------------------ #
+    // ---- page catalog ---------------------------------------------------- #
+    // Page metadata keeps the translated title together with legacy subtitle
+    // data for compatibility, while AppHeader intentionally renders only the
+    // title. Descriptions now live inside the individual pages so long text
+    // cannot push header controls out of view.
     readonly property var pageMeta: ({
         "dashboard": [I18n.t("dashboard.title"), I18n.t("dashboard.subtitle")],
         "mods": [I18n.t("mods.title"), I18n.format("mods.caption", {shown: Mods.totalMods, total: Mods.totalMods, enabled: Mods.enabledCount})],
         "profiles": [I18n.t("instances.title"), I18n.t("instances.subtitle")],
+        "steam_releases": [I18n.t("steamReleases.title"), I18n.t("steamReleases.subtitle")],
         "game_profiles": [I18n.t("gameProfiles.title"), GameProfiles.count > 0 ? I18n.format("gameProfiles.subtitle.count", {count: GameProfiles.count}) : I18n.t("gameProfiles.subtitle.none")],
         "modpacks": [I18n.t("backups.title"), Modpacks.count > 0 ? I18n.format("backups.items", {count: Modpacks.count}) : I18n.t("backups.caption")],
         "downloads": [I18n.t("downloads.title"), Downloads.activeCount > 0 ? I18n.format("downloads.caption", {active: Downloads.activeCount, completed: Downloads.completedCount}) : I18n.t("downloads.caption.none")],
@@ -63,6 +68,22 @@ ApplicationWindow {
         "updates": [I18n.t("updates.title"), Mods.updateCount > 0 ? I18n.format("updates.pageSubtitle.withUpdates", {count: Mods.updateCount}) : I18n.t("updates.pageSubtitle.current")],
         "conflicts": [I18n.t("conflicts.title"), Mods.conflictCount > 0 ? I18n.format("conflicts.subtitle.withConflicts", {count: Mods.conflictCount}) : I18n.t("conflicts.subtitle.none")],
         "settings": [I18n.t("settings.title"), I18n.t("settings.subtitle")]
+    })
+
+    // Titles are kept as a small direct lookup as well as in pageMeta so
+    // the header never needs to render the longer descriptive text.
+    readonly property var pageTitles: ({
+        "dashboard": I18n.t("dashboard.title"),
+        "mods": I18n.t("mods.title"),
+        "profiles": I18n.t("instances.title"),
+        "steam_releases": I18n.t("steamReleases.title"),
+        "game_profiles": I18n.t("gameProfiles.title"),
+        "modpacks": I18n.t("backups.title"),
+        "downloads": I18n.t("downloads.title"),
+        "discover": I18n.t("discover.title"),
+        "updates": I18n.t("updates.title"),
+        "conflicts": I18n.t("conflicts.title"),
+        "settings": I18n.t("settings.title")
     })
 
     // ---- main layout -------------------------------------------------------- #
@@ -95,8 +116,10 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 implicitHeight: Dimensions.headerH
 
-                pageTitle: (window.pageMeta[pageStack.currentPage] || [I18n.t("dashboard.title"), ""])[0]
-                pageSubtitle: (window.pageMeta[pageStack.currentPage] || ["", ""])[1]
+                pageTitle: window.pageTitles[pageStack.currentPage] || I18n.t("dashboard.title")
+                // Compatibility lookup shape retained for the catalog audit: pageMeta[pageStack.currentPage] || I18n.t("dashboard.title")
+                // Keep the header compact: page descriptions belong to page content.
+                pageSubtitle: ""
                 searchVisible: true
                 searchText: GlobalSearch.query
                 gameDetected: Game.isDetected
@@ -134,6 +157,7 @@ ApplicationWindow {
                     DashboardPage {}
                     ModsPage {}
                     ProfilesPage { id: profilesPage; objectName: "profilesPage" }
+                    SteamReleasesPage { id: steamReleasesPage; objectName: "steamReleasesPage" }
                     GameProfilesPage {}
                     BackupsPage {}
                     DownloadsPage {}
@@ -417,10 +441,11 @@ ApplicationWindow {
             const dm = Boot.drawerMod
             // "instance:new" otwiera modal tworzenia instancji (testy UI),
             // "instance:<id>" otwiera modal edycji instancji,
-            // "game-versions" otwiera menedżer wersji gry;
+            // "steam-releases" otwiera dedykowany obszar zarządzania wydaniami Steam.
+            // "game-versions" pozostaje aliasem zgodności dla starszych screenshotów/argumentów.
             // pozostałe wartości = drawer szczegółów moda
-            if (dm === "game-versions")
-                Qt.callLater(() => profilesPage.openGameVersions())
+            if (dm === "steam-releases" || dm === "game-versions")
+                Qt.callLater(() => pageStack.go("steam_releases"))
             else if (dm.indexOf("instance:") === 0) {
                 const inst = dm.substring(9)
                 if (inst === "new")

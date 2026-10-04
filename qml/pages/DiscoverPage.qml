@@ -89,6 +89,11 @@ PageShell {
         anchors.margins: Dimensions.pagePad
         spacing: 16
 
+        PageDescription {
+            text: I18n.t("discover.subtitle")
+            maxTextWidth: 760
+        }
+
         RowLayout {
             Layout.fillWidth: true
             SearchBar {

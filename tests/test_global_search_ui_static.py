@@ -64,7 +64,9 @@ def test_account_modal_is_separate_from_game_version_modal():
     profiles = (ROOT / "qml" / "pages" / "ProfilesPage.qml").read_text(encoding="utf-8")
     assert 'SteamAccountModal {' in MAIN_QML
     assert 'onAccountRequested: steamAccountModal.open()' in MAIN_QML
-    assert 'onClicked: gameVersionsModal.open()' in profiles
+    assert 'SteamReleasesPage { id: steamReleasesPage' in MAIN_QML
+    assert 'gameVersionsModal' not in profiles
+    assert 'GameVersionsModal' not in profiles
     assert 'steamAccount.downloadControlHint' in account
 
 
@@ -74,22 +76,14 @@ def test_steam_account_modal_imports_controls_for_busy_indicator():
     assert "BusyIndicator {" in account
 
 
-def test_game_versions_modal_uses_compact_modern_layout():
-    qml = (ROOT / "qml" / "components" / "GameVersionsModal.qml").read_text(encoding="utf-8")
-    assert 'cardWidth: 900' in qml
-    assert 'title: I18n.t("gameVersions.title")' in qml
+def test_steam_releases_page_uses_compact_modern_layout():
+    qml = (ROOT / "qml" / "pages" / "SteamReleasesPage.qml").read_text(encoding="utf-8")
+    assert 'maxWidth: 1080' in qml
+    assert 'pageName: "steam_releases"' in qml
     assert 'GridLayout {' in qml
     assert 'StatusBadge {' in qml
-    assert 'footer: [' in qml
-    assert 'text: I18n.t("gameVersions.refresh")' in qml
-    assert 'text: I18n.t("gameVersions.close")' in qml
-
-
-def test_game_versions_modal_keeps_download_cancel_in_modal():
-    qml = (ROOT / "qml" / "components" / "GameVersionsModal.qml").read_text(encoding="utf-8")
-    assert 'text: I18n.t("gameVersions.downloadCancel")' in qml
-    assert 'onClicked: GameVersions.cancel()' in qml
-    assert 'GameVersions.downloadingBranch !== ""' in qml
+    assert 'text: I18n.t("steamReleases.refresh")' in qml
+    
 
 
 def test_mod_card_has_web_search_action():

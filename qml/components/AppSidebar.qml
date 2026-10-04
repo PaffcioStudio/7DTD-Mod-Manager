@@ -23,6 +23,7 @@ Item {
     readonly property var navItems: [
         { page: "dashboard", key: "nav.dashboard", icon: "grid", badge: "none" },
         { page: "profiles",  key: "nav.instances", icon: "layers", badge: "none" },
+        { page: "steam_releases", key: "nav.steamReleases", icon: "download", badge: "none" },
         { page: "game_profiles", key: "nav.gameProfiles", icon: "file-text", badge: "none" },
         { page: "discover",  key: "nav.discover", icon: "globe", badge: "" },
         { page: "mods",      key: "nav.mods", icon: "package", badge: "none" },

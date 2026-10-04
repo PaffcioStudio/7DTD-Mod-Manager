@@ -210,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         app_info = boot_step("AppInfo", lambda: AppInfo(bus))
         file_browser = boot_step("FileBrowser", FileBrowser)
         game_versions = boot_step("GameVersionsManager", GameVersionsManager)
+        downloads.setGameVersionsManager(game_versions)
         global_search = boot_step("GlobalSearchManager", lambda: GlobalSearchManager(mods, profiles))
     except Exception:
         logger.exception("Failed to initialize the application backend")
@@ -247,6 +248,11 @@ def main(argv: list[str] | None = None) -> int:
     game_versions.gameDownloadStarted.connect(downloads.startGameVersionDownload)
     game_versions.gameDownloadProgress.connect(downloads.updateGameVersionDownload)
     game_versions.gameDownloadFinished.connect(downloads.finishGameVersionDownload)
+
+    # Po podpięciu sygnałów automatycznie wznów pobranie wersji gry, które
+    # było aktywne przy zamknięciu poprzedniej sesji. Ręcznie zapauzowane
+    # pozycje pozostają w stanie paused i czekają na Wznów.
+    QTimer.singleShot(0, downloads.resumeRestoredGameDownloads)
 
     # first run: try to detect the game quietly
     if not settings.gameExecutable:
