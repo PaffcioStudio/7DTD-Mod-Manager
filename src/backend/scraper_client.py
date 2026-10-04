@@ -66,6 +66,51 @@ def _game_version_family(value: str) -> tuple[str, tuple[int, ...]] | None:
     return kind, tuple(int(part) for part in number.split("."))
 
 
+def _declared_game_version_tokens(
+    declared_versions: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Normalize catalog game-version declarations such as ``V2 Mods``.
+
+    The site commonly exposes family labels rather than canonical branch IDs.
+    ``required_game_branch()`` accepts those aliases for launch/download logic,
+    but file matching needs a lightweight parser too so ``V2 Mods`` can match
+    an artifact named ``... V2.6 ...``.
+    """
+    values: list[str] = []
+    for raw in declared_versions or ():
+        text = str(raw or "").strip()
+        if not text:
+            continue
+
+        # Canonical / common labels: V2, V2.6, Alpha 21, A21.2, etc.
+        normalized = _normalize_detected_game_version(text)
+        if normalized and normalized not in values:
+            values.append(normalized)
+            continue
+
+        for match in re.finditer(
+            r"(?<![a-z0-9])(?:alpha|a|v)\s*(\d+(?:\.\d+)*)",
+            text, re.IGNORECASE,
+        ):
+            prefix = match.group(0).strip().casefold()
+            number = match.group(1)
+            canonical = (
+                f"alpha{number}" if prefix.startswith(("alpha", "a"))
+                else f"v{number}"
+            )
+            if canonical not in values:
+                values.append(canonical)
+
+        # Site family labels: ``V2 Mods``, ``V3 Mods``, etc.
+        family = re.search(r"\bv\s*(\d+)\s+mods?\b", text, re.IGNORECASE)
+        if family:
+            canonical = f"v{family.group(1)}"
+            if canonical not in values:
+                values.append(canonical)
+
+    return values
+
+
 def detect_file_game_versions(
     label: str = "",
     filename: str = "",
@@ -79,11 +124,7 @@ def detect_file_game_versions(
     Dopiero gdy takiego kontekstu nie ma, używamy wszystkich oznaczeń V*/A*.
     Dzięki temu "Darkness Falls V6 for V1.4 b8" daje ``v1.4``, a nie ``v6``.
     """
-    structural = []
-    for value in declared_versions or ():
-        normalized = _normalize_detected_game_version(str(value))
-        if normalized and normalized not in structural:
-            structural.append(normalized)
+    structural = _declared_game_version_tokens(declared_versions)
     if structural:
         return structural
 
@@ -143,6 +184,64 @@ def detect_file_game_versions(
         if canonical not in detected:
             detected.append(canonical)
     return detected
+
+
+def detect_artifact_game_versions(
+    label: str = "",
+    filename: str = "",
+    declared_versions: list[str] | tuple[str, ...] | None = None,
+    mod_version: str | None = None,
+) -> list[str]:
+    """Detect concrete game versions from an actual downloadable artifact.
+
+    The site's catalog often declares only a family (for example ``V2 Mods``),
+    while the archive itself says ``V2.6``.  The artifact name must therefore
+    win over a broad catalog label whenever it contains a more specific branch.
+    A mod release can reuse the same number as the game branch, so we retry
+    once without the mod-version exclusion and keep only versions compatible
+    with the page's declared game family.
+    """
+    declared = _declared_game_version_tokens(declared_versions)
+
+    # First prefer an artifact token not equal to the known mod release.
+    strict = detect_file_game_versions(
+        label=label,
+        filename=filename,
+        declared_versions=None,
+        mod_version=mod_version,
+    )
+    if strict:
+        if not declared:
+            return strict
+        matched = [
+            value for value in strict
+            if any(game_version_matches(decl, [value]) for decl in declared)
+        ]
+        if matched:
+            return matched
+
+    # Same-version edge case: ``mod_version == 2.6`` and the actual archive is
+    # ``... V2.6 ...zip``.  Re-check without treating 2.6 as a mod-version
+    # token, then constrain the result to the game's declared family.
+    raw = detect_file_game_versions(
+        label=label,
+        filename=filename,
+        declared_versions=None,
+        mod_version=None,
+    )
+    if raw:
+        if not declared:
+            return raw
+        matched = [
+            value for value in raw
+            if any(game_version_matches(decl, [value]) for decl in declared)
+        ]
+        if matched:
+            return matched
+
+    # No concrete token in the file name.  Fall back to the page's family
+    # declaration so normal version matching can still be performed.
+    return declared
 
 
 def game_version_matches(selected: str, detected_versions: list[str] | tuple[str, ...]) -> bool:
@@ -443,6 +542,12 @@ class ExternalLink:
             return name
         if _is_azure_items_zip_url(self.url):
             return "azure-repository.zip"
+        if _is_mediafire_share_url(self.url):
+            # MediaFire share pages end in ``/file`` and the real archive name
+            # is the path segment immediately before it.  Do not use the
+            # temporary ``downloadNNNN.mediafire.com`` URL here: it is created
+            # only at download time.
+            return _mediafire_filename_from_url(self.url)
         name = unquote_plus(os.path.basename(urlparse(self.url).path))
         return name or re.sub(r"[^\w.-]+", "_", self.label or "download")
 
@@ -749,13 +854,15 @@ class SevenDaysModsClient:
                 "url": raw["url"],
                 "file_type": raw.get("file_type") or "external",
                 "version": raw.get("mod_version"),
-                "detected_game_versions": detect_file_game_versions(
+                "detected_game_versions": detect_artifact_game_versions(
                     label=label,
-                    # URL hostera może zawierać numer wersji samego moda
-                    # (np. MediaFire: ``...V2.6...``), więc nie używamy go jako
-                    # źródła wersji gry. Wersję pobieramy z nazwy/etykiety linku,
-                    # danych strukturalnych lub deklaracji całego moda.
-                    filename="",
+                    # Nazwa artefaktu jest bezpieczniejszym źródłem niż sam
+                    # hoster URL. MediaFire share URL daje nam tu rzeczywistą
+                    # nazwę ZIP-a bez używania tymczasowego adresu CDN.
+                    filename=ExternalLink(
+                        id=raw["id"], url=raw["url"], label=label,
+                        version=raw.get("mod_version")
+                    ).filename,
                     declared_versions=(
                         raw.get("game_versions")
                         if isinstance(raw.get("game_versions"), (list, tuple))

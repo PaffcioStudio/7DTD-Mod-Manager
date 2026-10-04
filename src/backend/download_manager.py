@@ -46,6 +46,7 @@ from backend.scraper_client import (
     SevenDaysModsClient,
     parse_mod_url,
     detect_file_game_versions,
+    detect_artifact_game_versions,
     game_version_matches,
     select_concrete_game_version,
 )
@@ -1336,11 +1337,13 @@ class DownloadManager(QObject):
         selected = (game_version or "").strip()
         if not selected:
             return True
-        detected = detect_file_game_versions(
+        detected = detect_artifact_game_versions(
             label=link.label,
-            # URL hostera (np. MediaFire) może zawierać wersję samego moda
-            # albo numer pliku. Nie traktujemy go jako nazwy pliku gry.
-            filename="",
+            # Dla stron hostujących używamy nazwę rzeczywistego artefaktu,
+            # gdy parser potrafi ją bezpiecznie wydobyć z URL-a. Dla MediaFire
+            # jest to segment przed ``/file``; nie jest to tymczasowy CDN URL.
+            filename=link.filename,
+            declared_versions=mod_info.game_versions,
             mod_version=link.version,
         )
         if detected:
@@ -1351,6 +1354,56 @@ class DownloadManager(QObject):
             if str(value).strip()
         ]
         return len(declared) == 1 and game_version_matches(selected, declared)
+
+    @staticmethod
+    def _select_external_for_download(links, selected_game_version: str, mod_info):
+        """Wybiera zewnętrzny artefakt, także gdy filtr wersji jest pusty.
+
+        Gdy 7daystodiemods.com zwraca wyłącznie link zewnętrzny (np.
+        MediaFire), wcześniejsza ścieżka ``<main>`` pobierała właściwy ZIP,
+        ale nie przypisywała jego wykrytej wersji do automatycznie tworzonej
+        instancji. ``chosen_ext`` pozostawało puste, więc ``game_branch``
+        kończył jako ``""`` = Steam.
+
+        Przy wybranym filtrze wymagamy jednoznacznego dopasowania. Bez filtra
+        akceptujemy jeden i tylko jeden zewnętrzny artefakt; jego etykieta
+        może dostarczyć konkretnej wersji, np. ``V2.6``. Przy wielu linkach
+        nie zgadujemy, żeby nie zainstalować złego wydania.
+        """
+        candidates = list(links or [])
+        if not candidates:
+            return None
+
+        selected = (selected_game_version or "").strip()
+        if selected:
+            matching = [
+                link for link in candidates
+                if DownloadManager._external_matches_selected_game_version(
+                    link, selected, mod_info)
+            ]
+            return matching[0] if len(matching) == 1 else None
+
+        if len(candidates) != 1:
+            return None
+
+        # Bez filtra jeden link jest bezpieczny tylko wtedy, gdy sam link
+        # albo deklaracja moda daje jednoznaczną informację o wersji gry.
+        link = candidates[0]
+        detected = detect_artifact_game_versions(
+            label=link.label,
+            filename=link.filename,
+            declared_versions=mod_info.game_versions,
+            mod_version=link.version,
+        )
+        if len(detected) == 1:
+            return link
+
+        declared = [
+            str(value).strip()
+            for value in (mod_info.game_versions or [])
+            if str(value).strip()
+        ]
+        return link if len(declared) == 1 else None
 
     def _start_mod_worker(self, item: DownloadItem) -> None:
         cancel = item.cancel_event
@@ -1454,31 +1507,48 @@ class DownloadManager(QObject):
                                     }))
                             chosen_ext = compatible_external[0]
                     else:
-                        detected = {
-                            version
-                            for file in info.files
-                            for version in detect_file_game_versions(
-                                label=file.label,
-                                filename=file.filename,
-                                mod_version=file.version,
-                            )
-                        }
-                        detected.update(
-                            version
-                            for link in info.external_links
-                            for version in detect_file_game_versions(
-                                label=link.label,
-                                filename="",
-                                mod_version=link.version,
-                            )
-                        )
-                        if len(detected) > 1:
-                            raise modpack_downloader.DownloadError(
-                                i18n_message("download.mod.selectGameVersion")
-                            )
-                        main_file = next(
-                            (f for f in info.files if f.file_type == "main"), None) \
-                            or (info.files[0] if info.files else None)
+                        # Bez filtra zachowujemy dotychczasowy priorytet dla
+                        # plików hostowanych. Dopiero gdy katalog nie ma
+                        # żadnego ``mod_file``, a posiada dokładnie jeden link
+                        # zewnętrzny (np. MediaFire), wybieramy go jawnie.
+                        # Dzięki temu nie tracimy wersji artefaktu przy tworzeniu
+                        # Overhaulu i jednocześnie nie zmieniamy zachowania modów,
+                        # które mają natywny plik 7daystodiemods.com.
+                        if info.files:
+                            detected = {
+                                version
+                                for file in info.files
+                                for version in detect_file_game_versions(
+                                    label=file.label,
+                                    filename=file.filename,
+                                    mod_version=file.version,
+                                )
+                            }
+                            if len(detected) > 1:
+                                raise modpack_downloader.DownloadError(
+                                    i18n_message("download.mod.selectGameVersion")
+                                )
+                            main_file = next(
+                                (f for f in info.files if f.file_type == "main"), None) \
+                                or info.files[0]
+                        else:
+                            chosen_ext = self._select_external_for_download(
+                                info.external_links, selected_game_version, info)
+                            if chosen_ext is None:
+                                detected = {
+                                    version
+                                    for link in info.external_links
+                                    for version in detect_artifact_game_versions(
+                                        label=link.label,
+                                        filename=link.filename,
+                                        declared_versions=info.game_versions,
+                                        mod_version=link.version,
+                                    )
+                                }
+                                if len(detected) > 1:
+                                    raise modpack_downloader.DownloadError(
+                                        i18n_message("download.mod.selectGameVersion")
+                                    )
 
                 # Zachowujemy konkretną wersję gry dla automatycznie tworzonej
                 # instancji. Katalog może deklarować szeroką rodzinę (np.
@@ -1487,15 +1557,17 @@ class DownloadManager(QObject):
                 # a nie pustą wartość oznaczającą Steam.
                 artifact_versions: list[str] = []
                 if main_file is not None:
-                    artifact_versions = detect_file_game_versions(
+                    artifact_versions = detect_artifact_game_versions(
                         label=main_file.label,
                         filename=main_file.filename,
+                        declared_versions=info.game_versions,
                         mod_version=main_file.version,
                     )
                 elif chosen_ext is not None:
-                    artifact_versions = detect_file_game_versions(
+                    artifact_versions = detect_artifact_game_versions(
                         label=chosen_ext.label,
                         filename=chosen_ext.filename,
+                        declared_versions=info.game_versions,
                         mod_version=chosen_ext.version,
                     )
 

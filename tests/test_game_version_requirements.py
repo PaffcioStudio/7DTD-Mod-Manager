@@ -111,3 +111,46 @@ def test_select_concrete_game_version_keeps_exact_patch():
 
 def test_select_concrete_game_version_rejects_ambiguous_no_selection():
     assert select_concrete_game_version("", ["v2.5", "v2.6"]) == ""
+
+
+def test_single_external_artifact_without_filter_is_selected_for_branch_inference():
+    from backend.download_manager import DownloadManager
+    from backend.scraper_client import ExternalLink
+
+    class Info:
+        game_versions = ["V2 Mods"]
+
+    link = ExternalLink(
+        "mf",
+        "https://www.mediafire.com/file/gm61vfy91x5l3lq/Your_End_2.4.1.7_Stable_V2.6(b14).zip/file",
+        "Your End 2.4.1.7 Stable V2.6(b14).zip",
+    )
+    selected = DownloadManager._select_external_for_download([link], "", Info())
+    assert selected is link
+
+
+def test_multiple_external_artifacts_without_filter_are_not_guessed():
+    from backend.download_manager import DownloadManager
+    from backend.scraper_client import ExternalLink
+
+    class Info:
+        game_versions = ["V2 Mods", "V3 Mods"]
+
+    links = [
+        ExternalLink("v2", "https://example.invalid/v2.zip", "Overhaul V2.6.zip"),
+        ExternalLink("v3", "https://example.invalid/v3.zip", "Overhaul V3.zip"),
+    ]
+    assert DownloadManager._select_external_for_download(links, "", Info()) is None
+
+
+def test_single_external_artifact_without_version_data_is_not_guessed():
+    from backend.download_manager import DownloadManager
+    from backend.scraper_client import ExternalLink
+
+    class Info:
+        game_versions = ["V2 Mods", "V3 Mods"]
+
+    link = ExternalLink(
+        "mf", "https://example.invalid/download", "Download",
+    )
+    assert DownloadManager._select_external_for_download([link], "", Info()) is None

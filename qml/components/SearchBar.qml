@@ -14,6 +14,11 @@ Item {
     property string searchText: ""
     property real preferredWidth: 280
     property alias searchFocused: input.activeFocus
+
+    // Non-text focus sink: clicking outside the search field must remove the
+    // visual focus ring and keyboard focus from the TextInput completely.
+    focus: false
+    activeFocusOnTab: false
     signal searchEdited(string text)
     signal accepted()
 
@@ -22,7 +27,9 @@ Item {
     }
 
     function clearFocus() {
+        input.deselect()
         input.focus = false
+        root.forceActiveFocus()
     }
 
     implicitHeight: 38

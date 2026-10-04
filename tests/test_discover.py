@@ -292,6 +292,53 @@ class MediaFireExternalDownloadTests(unittest.TestCase):
         )
         self.assertEqual(detected, [])
 
+    def test_mediafire_artifact_version_can_override_same_mod_version_when_family_matches(self):
+        from backend.scraper_client import detect_artifact_game_versions
+
+        detected = detect_artifact_game_versions(
+            label="Your End 2.4.1.7 Stable V2.6(b14).zip",
+            filename="Your End 2.4.1.7 Stable V2.6(b14).zip",
+            declared_versions=["V2 Mods"],
+            mod_version="2.6",
+        )
+        self.assertEqual(detected, ["v2.6"])
+
+    def test_mediafire_share_url_exposes_real_archive_filename_for_version_detection(self):
+        from backend.scraper_client import ExternalLink, detect_artifact_game_versions
+
+        link = ExternalLink(
+            "mf", self.MEDIAFIRE_URL, "MediaFire", version="2.6"
+        )
+        self.assertEqual(
+            link.filename, "Your End 2.4.1.7 Stable V2.6(b14).zip"
+        )
+        self.assertEqual(
+            detect_artifact_game_versions(
+                label=link.label,
+                filename=link.filename,
+                declared_versions=["V2 Mods"],
+                mod_version=link.version,
+            ),
+            ["v2.6"],
+        )
+
+    def test_mediafire_external_matches_concrete_v2_branch(self):
+        from backend.download_manager import DownloadManager
+        from backend.scraper_client import ExternalLink
+
+        class Info:
+            game_versions = ["V2 Mods"]
+
+        link = ExternalLink(
+            "mf", self.MEDIAFIRE_URL, "MediaFire", version="2.6"
+        )
+        self.assertTrue(
+            DownloadManager._external_matches_selected_game_version(
+                link, "v2.6", Info()
+            )
+        )
+
+
     def test_mediafire_external_falls_back_to_single_declared_game_version(self):
         from backend.download_manager import DownloadManager
         from backend.scraper_client import ExternalLink

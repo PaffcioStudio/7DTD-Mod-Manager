@@ -264,6 +264,31 @@ ApplicationWindow {
         }
     }
 
+    // Search should lose keyboard focus as soon as the user clicks anywhere
+    // outside the field.  A window-level TapHandler observes the tap without
+    // becoming a blocking MouseArea, so buttons and page controls continue to
+    // receive the click normally.
+    TapHandler {
+        acceptedButtons: Qt.LeftButton
+        // The search TextInput is a child that normally grabs the pointer.
+        // Allow this observer to also see taps handled by sibling/child
+        // controls so an outside click can always dismiss keyboard focus.
+        grabPermissions: PointerHandler.CanTakeOverFromAnything
+        onTapped: (point) => {
+            if (!header.searchFocused)
+                return
+            const topLeft = header.mapToItem(
+                window.contentItem, header.searchLeft, 0)
+            const p = point.position
+            const inside = p.x >= topLeft.x
+                         && p.x <= topLeft.x + header.searchWidth
+                         && p.y >= topLeft.y
+                         && p.y <= topLeft.y + header.height
+            if (!inside)
+                header.closeSearch()
+        }
+    }
+
     // ---- overlays -------------------------------------------------------- #
     SteamAccountModal {
         id: steamAccountModal
