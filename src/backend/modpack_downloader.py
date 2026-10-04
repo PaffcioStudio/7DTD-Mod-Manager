@@ -427,7 +427,11 @@ def download_and_extract(
                 request_headers=request_headers,
             )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
-            zip_path.unlink(missing_ok=True)
+            # Undead Legacy keeps the original archive. The download manager
+            # moves it to downloads/ after a successful installation so the
+            # launcher's existing archive-cleanup setting remains authoritative.
+            if kind != DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
+                zip_path.unlink(missing_ok=True)
         else:
             raise DownloadError(i18n_message("download.error.unknownSource"))
     except OperationCancelled:

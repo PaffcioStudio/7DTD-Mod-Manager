@@ -41,6 +41,7 @@ from backend import instances as inst_mod
 from backend import downloads_cleanup
 from backend import mock_data
 from backend import modpack_downloader
+from backend import undead_legacy
 from backend.modinfo import find_modinfo
 from backend.scraper_client import (
     SevenDaysModsClient,
@@ -1933,6 +1934,39 @@ class DownloadManager(QObject):
             library.load_activation_state(), cancel_event=cancel)
         return len(library_ids)
 
+    def _preserve_undead_legacy_archive(self, temp_dir: Path) -> Path | None:
+        """Przenieś pobrane archiwum Undead Legacy do downloads/.
+
+        Archiwum jest celowo zachowywane po udanej instalacji. Zarządzanie
+        jego cyklem życia należy do istniejącego mechanizmu czyszczenia
+        pobranych archiwów w launcherze, a nie do workera modpacka.
+        """
+        archive = Path(temp_dir) / "download.zip"
+        if not archive.is_file():
+            install_log.warning(
+                "Undead Legacy archive was not found after extraction: %s",
+                archive,
+            )
+            return None
+
+        try:
+            metadata = undead_legacy.fetch_latest_release(refresh=False)
+            version = str(metadata.get("version") or undead_legacy.DEFAULT_VERSION).strip()
+        except Exception:
+            version = undead_legacy.DEFAULT_VERSION
+            install_log.warning(
+                "Could not refresh Undead Legacy archive version for filename; "
+                "using fallback %s", version, exc_info=True,
+            )
+
+        safe_version = re.sub(r"[^0-9A-Za-z._-]+", "_", version).strip("._-")
+        filename = f"UndeadLegacy_{safe_version}.zip" if safe_version else "UndeadLegacy.zip"
+        destination = fs.downloads_dir() / filename
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        archive.replace(destination)
+        install_log.info("Undead Legacy archive preserved: %s", destination)
+        return destination
+
     def _start_url_worker(self, item: DownloadItem) -> None:
         """Odpala wątek roboczy dla pozycji URL (promowanej z kolejki)."""
         cancel, pause = item.cancel_event, item.pause_event
@@ -1994,10 +2028,30 @@ class DownloadManager(QObject):
                     install_log.info(
                         "URL is an OVERHAUL - dedicated instance path: title=%r",
                         item.title)
+                    preserved_archive = None
+                    if modpack_downloader.detect_source_kind(item.url) == modpack_downloader.DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
+                        preserved_archive = self._preserve_undead_legacy_archive(temp_dir)
                     entry_count = self._install_overhaul_as_instance(
                         item.title, item.title, mod_folders, cancel,
                         source_note=source_note, game_version=item.game_version)
                     self.instancesRefreshNeeded.emit()
+                    if preserved_archive is not None:
+                        try:
+                            downloads_cleanup.register_installed(
+                                preserved_archive.name,
+                                preserved_archive.stat().st_size,
+                                source="undead-legacy",
+                            )
+                        except Exception:
+                            # Rejestr ma wpływ tylko na przyszłe auto-czyszczenie.
+                            # Nie może oznaczać udanej instalacji jako błędnej.
+                            install_log.warning(
+                                "Could not register preserved Undead Legacy archive: %s",
+                                preserved_archive,
+                                exc_info=True,
+                            )
+                    # Archiwum zostało wcześniej przeniesione poza temp_dir,
+                    # więc usuwamy wyłącznie wypakowaną zawartość roboczą.
                     modpack_downloader.cleanup_temp_dir(temp_dir)
                     temp_dir = None
                     item.temp_dir = None
