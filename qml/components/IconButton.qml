@@ -72,20 +72,26 @@ Item {
     readonly property var tipHost: Overlay.overlay
         ? Overlay.overlay
         : (Window.window ? Window.window.contentItem : root)
-    readonly property point tipOrigin: root.mapToItem(root.tipHost, 0, 0)
 
-    readonly property bool tipBelow: {
-        if (!hover.hovered || !Window.window)
-            return false
-        return root.tipOrigin.y < 42
-    }
-
-    // keep the tooltip inside the window horizontally (clamp around the button)
-    readonly property real tipGlobalX: {
+    // Pozycję liczymy IMPERATYWNIE, w chwili pokazania i potem cyklicznie,
+    // gdy tooltip jest widoczny. mapToItem() nie emituje zmian, więc binding
+    // typu `readonly property point origin: mapToItem(...)` liczył się raz
+    // (przy tworzeniu, gdy przycisk bywał jeszcze w (0,0) / na stronie
+    // sprzed animacji przejścia / przed layoutem) i tooltip lądował w
+    // przypadkowym miejscu, np. przy innym elemencie sidebara.
+    function placeTip() {
         const host = root.tipHost
+        if (!host || !root.visible)
+            return
+        const origin = root.mapToItem(host, 0, 0)
+        // keep the tooltip inside the window horizontally (clamp around the button)
         const maxX = Math.max(8, host.width - tip.width - 8)
-        const centered = root.tipOrigin.x + (root.width - tip.width) / 2
-        return Math.max(8, Math.min(maxX, centered))
+        const centered = origin.x + (root.width - tip.width) / 2
+        tip.x = Math.max(8, Math.min(maxX, centered))
+        // tuz przy gornej krawedzi okna tooltip idzie POD przycisk
+        tip.y = origin.y < 42
+            ? origin.y + root.height + 8
+            : origin.y - tip.height - 8
     }
 
     // ---- tooltip -------------------------------------------------------- #
@@ -96,10 +102,7 @@ Item {
         visible: opacity > 0.01
         width: tipText.implicitWidth + 18
         height: 26
-        x: root.tipGlobalX
-        y: root.tipBelow
-           ? root.tipOrigin.y + root.height + 8
-           : root.tipOrigin.y - height - 8
+        objectName: "iconButtonTip"
         z: 10000
 
         Rectangle {
@@ -124,7 +127,18 @@ Item {
         Timer {
             interval: 550
             running: root.hovered && root.tooltip !== ""
-            onTriggered: tip.opacity = 1
+            onTriggered: {
+                root.placeTip()
+                tip.opacity = 1
+            }
+        }
+        // przycisk moze sie przesunac pod stojacym kursorem (scroll, layout,
+        // animacja strony) - dopóki tooltip jest widoczny, trzymamy go przy nim
+        Timer {
+            interval: 50
+            repeat: true
+            running: tip.visible
+            onTriggered: root.placeTip()
         }
         Connections {
             target: hover
