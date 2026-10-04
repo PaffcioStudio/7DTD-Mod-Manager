@@ -39,9 +39,12 @@ from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
 from backend.fileops import (
+    InsufficientDiskSpace,
     OperationCancelled,
     ProgressCallback,
     check_cancel,
+    ensure_free_space,
+    raise_if_no_space,
 )
 from backend.modinfo import find_modinfo
 
@@ -219,6 +222,12 @@ def _http_download_file(
             if resumed:
                 total_size += downloaded
 
+            # Zanim ruszy transfer wielu GB: sprawdź, czy dysk w ogóle
+            # pomieści resztę pliku (przy wznowieniu liczymy tylko brakujące
+            # bajty). Rozmiar nieznany (brak Content-Length) = brak kontroli.
+            if total_size:
+                ensure_free_space(part.parent, total_size - (downloaded if resumed else 0))
+
             mode = "ab" if resumed else "wb"
             with open(part, mode) as f:
                 while True:
@@ -228,7 +237,13 @@ def _http_download_file(
                     chunk = resp.read(_CHUNK_SIZE)
                     if not chunk:
                         break
-                    f.write(chunk)
+                    try:
+                        f.write(chunk)
+                    except OSError as exc:
+                        # .part zostaje - po zwolnieniu miejsca "Ponów"
+                        # dociągnie resztę przez Range
+                        raise_if_no_space(exc, part.parent)
+                        raise
                     downloaded += len(chunk)
                     if progress_cb:
                         mb = downloaded / (1024 * 1024)
@@ -242,6 +257,20 @@ def _http_download_file(
         # wyszliśmy z bloku resp bez pauzy/anulowania -> plik kompletny
         part.replace(dest)
         return
+
+
+def _zip_already_complete(zip_path: Path) -> bool:
+    """Czy pod zip_path leży kompletne archiwum z poprzedniej próby.
+
+    ``download.zip`` powstaje wyłącznie przez ``part.replace(dest)`` po
+    zakończonym transferze, więc jeśli jest poprawnym ZIP-em (is_zipfile czyta
+    końcowy katalog centralny, obcięty plik nie przejdzie), nie ma po co
+    ściągać go drugi raz - to ratuje ponowne pobieranie 7,5 GB po błędzie
+    wypakowywania (np. braku miejsca)."""
+    try:
+        return zip_path.is_file() and zipfile.is_zipfile(zip_path)
+    except OSError:
+        return False
 
 
 def _git_clone(
@@ -315,6 +344,10 @@ def _extract_zip(
                 if not target.is_relative_to(root):
                     raise DownloadError(i18n_message("download.error.outsidePath", {"path": member.filename}))
                 targets.append((target, name.endswith("/")))
+            # Rozmiar PO rozpakowaniu znamy z nagłówków ZIP - sprawdzamy go
+            # zanim zapiszemy pierwszy bajt, zamiast paść po kilku minutach
+            # na Errno 28 z połową drzewa na dysku.
+            ensure_free_space(dest, sum(m.file_size for m in members))
             total = len(members) or 1
             for i, (member, (target, is_dir)) in enumerate(zip(members, targets)):
                 check_cancel(cancel_event)
@@ -322,10 +355,14 @@ def _extract_zip(
                     target.mkdir(parents=True, exist_ok=True)
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    with zf.open(member) as source, target.open("wb") as output:
-                        while chunk := source.read(_CHUNK_SIZE):
-                            check_cancel(cancel_event)
-                            output.write(chunk)
+                    try:
+                        with zf.open(member) as source, target.open("wb") as output:
+                            while chunk := source.read(_CHUNK_SIZE):
+                                check_cancel(cancel_event)
+                                output.write(chunk)
+                    except OSError as exc:
+                        raise_if_no_space(exc, dest)
+                        raise
                 if progress_cb:
                     progress_cb(i + 1, total, i18n_message("download.mod.extracting", {"name": member.filename}))
     except zipfile.BadZipFile as exc:
@@ -395,18 +432,23 @@ def download_and_extract(
             owner, repo = _parse_github_releases_url(url)
             asset_url, release_name = _github_latest_release_asset_url(owner, repo)
             zip_path = temp_dir / "release.zip"
-            _http_download_file(
-                asset_url, zip_path, progress_cb=progress_cb,
-                cancel_event=cancel_event, pause_event=pause_event,
-                label=i18n_message("download.mod.release", {"release": release_name}),
-            )
+            if not _zip_already_complete(zip_path):
+                _http_download_file(
+                    asset_url, zip_path, progress_cb=progress_cb,
+                    cancel_event=cancel_event, pause_event=pause_event,
+                    label=i18n_message("download.mod.release", {"release": release_name}),
+                )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             zip_path.unlink(missing_ok=True)
         elif kind in (DownloadSourceKind.DIRECT_ZIP, DownloadSourceKind.UNDEAD_LEGACY_MIRROR):
             zip_path = temp_dir / "download.zip"
             resolved_url = url
             request_headers = None
-            if kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
+            reuse_zip = _zip_already_complete(zip_path)
+            if reuse_zip:
+                if progress_cb:
+                    progress_cb(1, 1, i18n_message("download.mod.extracting", {"name": zip_path.name}))
+            elif kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
                 # Dropbox blocks the follow-up request when the signed URL is
                 # fetched without the same referrer/browser context that was
                 # used to resolve the public Undead Legacy mirror. Resolve the
@@ -421,11 +463,12 @@ def download_and_extract(
                     "Referer": "https://ul.subquake.com/",
                     "Accept": "*/*",
                 }
-            _http_download_file(
-                resolved_url, zip_path, progress_cb=progress_cb,
-                cancel_event=cancel_event, pause_event=pause_event,
-                request_headers=request_headers,
-            )
+            if not reuse_zip:
+                _http_download_file(
+                    resolved_url, zip_path, progress_cb=progress_cb,
+                    cancel_event=cancel_event, pause_event=pause_event,
+                    request_headers=request_headers,
+                )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             # Undead Legacy keeps the original archive. The download manager
             # moves it to downloads/ after a successful installation so the
@@ -441,7 +484,9 @@ def download_and_extract(
         # celowe: .part zostaje, niczego nie sprzątamy - wznowienie
         # kontynuuje z pobranymi bajtami
         raise
-    except DownloadError:
+    except (DownloadError, InsufficientDiskSpace):
+        # brak miejsca: sprzątamy częściowo wypakowane drzewo (zwalnia dysk),
+        # a kompletny download.zip/.part zostaje - "Ponów" nie ściąga od zera
         shutil.rmtree(extract_dir, ignore_errors=True)
         raise
     except Exception as exc:

@@ -55,7 +55,13 @@ from backend.game_versions import (
     required_game_branch, resolve_downloaded_branch, version_requirement_text,
     versions_root, APP_ID)
 from backend.events import EventBus
-from backend.fileops import OperationCancelled
+from backend.fileops import (
+    InsufficientDiskSpace,
+    OperationCancelled,
+    ensure_free_space,
+    same_device,
+    tree_size,
+)
 from backend.mod_manager import ModManager
 from services import install_log
 from services.i18n_message import message as i18n_message
@@ -561,7 +567,7 @@ class DownloadManager(QObject):
                         item.downloaded = part.stat().st_size
                         break
             elif item.kind == "url":
-                item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-"))
+                item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-", dir=fs.staging_dir()))
             self._model.append(item)
             logger.info("Restored download queue item: %s (%s)", item.title, status)
         if any(i.status == "queued" for i in self._model.items):
@@ -1179,7 +1185,7 @@ class DownloadManager(QObject):
             flavor=flavor,
             game_version=game_version,
         )
-        item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-"))
+        item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-", dir=fs.staging_dir()))
         self._model.append(item)
         self._promote_queued()
         self._emit_counts()
@@ -1669,7 +1675,7 @@ class DownloadManager(QObject):
                             "extension": dest.suffix or "(bez rozszerzenia)"
                         }))
 
-                temp_dir = Path(tempfile.mkdtemp(prefix="mm-mod-"))
+                temp_dir = Path(tempfile.mkdtemp(prefix="mm-mod-", dir=fs.staging_dir()))
                 item.temp_dir = temp_dir
 
                 def extract_progress(done: int, total: int, label: str) -> None:
@@ -1866,6 +1872,15 @@ class DownloadManager(QObject):
             "INSTANCE create: name=%r -> %s (game_branch=%r, description=%r)",
             instance.name, instance.data_dir, instance.game_branch, instance.description)
         fs.ensure_dir(instance.mods_dir)
+        # Foldery modów leżą w katalogu roboczym, który i tak jest kasowany
+        # po instalacji - więc je PRZENOSIMY (rename = zero dodatkowego
+        # miejsca i czasu) zamiast kopiować. Overhaul rzędu 7+ GB kopiowany
+        # obok wypakowanej wersji potrzebował 3x tyle miejsca. Dopiero gdy
+        # katalog roboczy jest na INNYM dysku niż instancja, shutil.move
+        # kopiuje - wtedy najpierw sprawdzamy, czy dysk instancji to pomieści.
+        if mod_folders and not same_device(Path(mod_folders[0]), instance.mods_dir):
+            ensure_free_space(
+                instance.mods_dir, sum(tree_size(Path(f)) for f in mod_folders))
         for folder in mod_folders:
             if cancel.is_set():
                 raise OperationCancelled(i18n_message("common.operationCancelled"))
@@ -1873,9 +1888,9 @@ class DownloadManager(QObject):
             target = instance.mods_dir / source.name
             if target.exists() or target.is_symlink():
                 shutil.rmtree(target) if target.is_dir() and not target.is_symlink() else target.unlink()
-            shutil.copytree(source, target, symlinks=True)
+            shutil.move(str(source), str(target))
         inst_mod.save_instances(registry + [instance])
-        install_log.info("INSTANCE ready: %r -> %s (%d mods copied)",
+        install_log.info("INSTANCE ready: %r -> %s (%d mods moved)",
                          instance.name, instance.data_dir, len(mod_folders))
         return len(mod_folders)
 
@@ -1963,7 +1978,20 @@ class DownloadManager(QObject):
         filename = f"UndeadLegacy_{safe_version}.zip" if safe_version else "UndeadLegacy.zip"
         destination = fs.downloads_dir() / filename
         destination.parent.mkdir(parents=True, exist_ok=True)
-        archive.replace(destination)
+        try:
+            if not same_device(archive, destination.parent):
+                # rename między dyskami = kopiowanie wielu GB
+                ensure_free_space(destination.parent, archive.stat().st_size)
+            shutil.move(str(archive), str(destination))
+        except (OSError, InsufficientDiskSpace):
+            # Archiwum to tylko cache do ponownej instalacji - brak miejsca na
+            # jego zachowanie nie może oznaczać, że instalacja się nie udała.
+            install_log.warning(
+                "Could not preserve Undead Legacy archive in %s (it will be "
+                "removed with the temporary directory)", destination.parent,
+                exc_info=True,
+            )
+            return None
         install_log.info("Undead Legacy archive preserved: %s", destination)
         return destination
 
@@ -2028,13 +2056,16 @@ class DownloadManager(QObject):
                     install_log.info(
                         "URL is an OVERHAUL - dedicated instance path: title=%r",
                         item.title)
-                    preserved_archive = None
-                    if modpack_downloader.detect_source_kind(item.url) == modpack_downloader.DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
-                        preserved_archive = self._preserve_undead_legacy_archive(temp_dir)
+                    # Najpierw instalacja, dopiero potem przenosimy archiwum do
+                    # downloads/: gdy instalacja się nie uda, ZIP zostaje w
+                    # katalogu roboczym i "Ponów" nie ściąga 7+ GB od zera.
                     entry_count = self._install_overhaul_as_instance(
                         item.title, item.title, mod_folders, cancel,
                         source_note=source_note, game_version=item.game_version)
                     self.instancesRefreshNeeded.emit()
+                    preserved_archive = None
+                    if modpack_downloader.detect_source_kind(item.url) == modpack_downloader.DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
+                        preserved_archive = self._preserve_undead_legacy_archive(temp_dir)
                     if preserved_archive is not None:
                         try:
                             downloads_cleanup.register_installed(

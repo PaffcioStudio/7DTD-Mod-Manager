@@ -53,6 +53,21 @@ def downloads_dir() -> Path:
     return root
 
 
+def staging_dir() -> Path:
+    """Katalog roboczy pobierania/wypakowywania (``mm-dl-*``, ``mm-mod-*``).
+
+    Leży pod katalogiem danych aplikacji (a NIE w systemowym /tmp), bo:
+    - /tmp bywa tmpfs-em (RAM) albo małą partycją systemową - wielogigabajtowy
+      ZIP overhaulu (np. Undead Legacy ~7,5 GB + wypakowana kopia) tam nie
+      mieści się i kończył się ``[Errno 28] No space left on device``;
+    - ten sam system plików co downloads/ i instances/ pozwala PRZENOSIĆ
+      (rename, bez kopiowania) archiwum i wypakowane mody zamiast kopiować.
+    """
+    root = data_dir() / "tmp"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def user_mods_dir() -> Path:
     """Default user mods folder - same location the legacy manager uses."""
     return data_dir() / "mods"

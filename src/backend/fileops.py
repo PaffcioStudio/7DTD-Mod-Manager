@@ -10,6 +10,7 @@ operacje (kopiowanie modów, usuwanie) nie blokowały głównego wątku UI.
 """
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import threading
@@ -22,6 +23,95 @@ ProgressCallback = Callable[[int, int, str], None]
 
 class OperationCancelled(Exception):
     """Podniesione, gdy użytkownik przerwał operację plikową."""
+
+
+class InsufficientDiskSpace(Exception):
+    """Za mało wolnego miejsca na dysku. ``str(exc)`` to gotowa koperta
+    i18n (``__I18N__:...``), więc UI pokazuje przetłumaczony komunikat
+    z ilością potrzebnego i dostępnego miejsca zamiast surowego Errno 28."""
+
+
+# zapas na metadane systemu plików, logi, pliki tymczasowe gry itp.
+FREE_SPACE_MARGIN = 256 * 1024 * 1024
+
+
+def format_size(num_bytes: int) -> str:
+    """Rozmiar czytelny dla człowieka (binarnie, np. ``7.5 GB``)."""
+    size = float(max(0, int(num_bytes)))
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"  # pragma: no cover
+
+
+def _existing_ancestor(path: Path) -> Path:
+    path = Path(path)
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return path
+
+
+def free_space(path: Path | str) -> int:
+    """Wolne bajty na systemie plików, na którym leży (lub powstanie) path."""
+    return shutil.disk_usage(_existing_ancestor(Path(path))).free
+
+
+def ensure_free_space(path: Path | str, required: int, *, margin: int = FREE_SPACE_MARGIN) -> None:
+    """Rzuca InsufficientDiskSpace, jeśli na dysku z ``path`` jest mniej niż
+    ``required`` + ``margin`` bajtów. ``required <= 0`` nic nie sprawdza."""
+    if required is None or required <= 0:
+        return
+    free = free_space(path)
+    needed = int(required) + max(0, int(margin))
+    if free < needed:
+        raise InsufficientDiskSpace(i18n_message("download.error.noSpace", {
+            "path": str(_existing_ancestor(Path(path))),
+            "need": format_size(needed),
+            "free": format_size(free),
+        }))
+
+
+def raise_if_no_space(exc: OSError, path: Path | str) -> None:
+    """Zamienia surowe OSError(ENOSPC) na InsufficientDiskSpace (wołać w
+    ``except OSError`` wokół zapisu). Inne błędy OSError zostają bez zmian."""
+    if getattr(exc, "errno", None) != errno.ENOSPC:
+        return
+    try:
+        free = free_space(path)
+    except OSError:
+        free = 0
+    raise InsufficientDiskSpace(i18n_message("download.error.noSpaceDuringWrite", {
+        "path": str(_existing_ancestor(Path(path))),
+        "free": format_size(free),
+    })) from exc
+
+
+def same_device(a: Path | str, b: Path | str) -> bool:
+    """Czy dwie ścieżki leżą na tym samym systemie plików (rename = O(1))."""
+    try:
+        return os.stat(_existing_ancestor(Path(a))).st_dev == os.stat(_existing_ancestor(Path(b))).st_dev
+    except OSError:
+        return False
+
+
+def tree_size(path: Path | str) -> int:
+    """Suma rozmiarów plików w drzewie (symlinki nie są śledzone)."""
+    path = Path(path)
+    if path.is_symlink():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            fp = os.path.join(root, name)
+            try:
+                if not os.path.islink(fp):
+                    total += os.path.getsize(fp)
+            except OSError:
+                pass
+    return total
 
 
 def check_cancel(cancel_event: Optional[threading.Event]) -> None:
