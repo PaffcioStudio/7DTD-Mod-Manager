@@ -42,6 +42,7 @@ from backend import downloads_cleanup
 from backend import mock_data
 from backend import modpack_downloader
 from backend import undead_legacy
+from backend import bepinex_loader
 from backend.modinfo import find_modinfo
 from backend.scraper_client import (
     SevenDaysModsClient,
@@ -1732,7 +1733,8 @@ class DownloadManager(QObject):
                         sorted(categories))
                     entry_count = self._install_overhaul_as_instance(
                         info.slug, info.title or info.slug, mod_folders, cancel,
-                        game_version=item.game_version)
+                        game_version=item.game_version,
+                        loader_root=bepinex_loader.find_loader_root(temp_dir, mods_root))
                     self.instancesRefreshNeeded.emit()
                     modpack_downloader.cleanup_temp_dir(temp_dir)
                     temp_dir = None
@@ -1843,7 +1845,8 @@ class DownloadManager(QObject):
     def _install_overhaul_as_instance(self, slug: str, title: str,
                                       mod_folders: list, cancel,
                                       source_note: str = "z 7daystodiemods.com",
-                                      game_version: str = "") -> int:
+                                      game_version: str = "",
+                                      loader_root: Path | None = None) -> int:
         """Instaluje Overhaul bezpośrednio do świeżej instancji.
 
         Nie tworzymy wpisów w Bibliotece ani stanu globalnej aktywacji. Cały
@@ -1889,6 +1892,11 @@ class DownloadManager(QObject):
             if target.exists() or target.is_symlink():
                 shutil.rmtree(target) if target.is_dir() and not target.is_symlink() else target.unlink()
             shutil.move(str(source), str(target))
+        if loader_root is not None:
+            # pliki startowe BepInEx (winhttp.dll, doorstop_config.ini,
+            # BepInEx/) z paczki - bez nich overhaul nie załaduje swojego kodu
+            bepinex_loader.stash_loader(loader_root, instance.data_dir)
+            install_log.info("INSTANCE loader: BepInEx files stored from %s", loader_root)
         inst_mod.save_instances(registry + [instance])
         install_log.info("INSTANCE ready: %r -> %s (%d mods moved)",
                          instance.name, instance.data_dir, len(mod_folders))
@@ -2004,6 +2012,10 @@ class DownloadManager(QObject):
             self.urlProgress.emit(item.id, done, total, label)
 
         def worker() -> None:
+            # worker PRZYPISUJE temp_dir (= None po sprzataniu), wiec bez nonlocal
+            # Python traktuje go jako zmienna lokalna i odczyt przed przypisaniem
+            # rzuca UnboundLocalError (po udanej instalacji, przy przenoszeniu ZIP-a)
+            nonlocal temp_dir
             try:
                 item.game_version = required_game_branch(item.game_version)
                 if item.game_version:
@@ -2061,7 +2073,8 @@ class DownloadManager(QObject):
                     # katalogu roboczym i "Ponów" nie ściąga 7+ GB od zera.
                     entry_count = self._install_overhaul_as_instance(
                         item.title, item.title, mod_folders, cancel,
-                        source_note=source_note, game_version=item.game_version)
+                        source_note=source_note, game_version=item.game_version,
+                        loader_root=bepinex_loader.find_loader_root(extracted, mods_root))
                     self.instancesRefreshNeeded.emit()
                     preserved_archive = None
                     if modpack_downloader.detect_source_kind(item.url) == modpack_downloader.DownloadSourceKind.UNDEAD_LEGACY_MIRROR:

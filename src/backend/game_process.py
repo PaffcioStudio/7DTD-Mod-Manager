@@ -37,6 +37,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from backend import bepinex_loader
 from backend.wine_paths import to_wine_path
 
 logger = logging.getLogger(__name__)
@@ -837,6 +838,18 @@ def _launch_downloaded_windows_version(
         "STEAM_EXTRA_COMPAT_TOOLS_PATHS": str(proton.parent),
     })
 
+    # Katalog gry jest wspólny dla instancji tej wersji, a loader BepInEx
+    # (winhttp.dll + Doorstop, np. Undead Legacy) ma działać tylko w instancji,
+    # która go ma - wdrażamy go (albo sprzątamy) przy każdym starcie.
+    loader_active = False
+    try:
+        loader_active = bepinex_loader.sync_game_dir(game_dir, user_data_folder)
+    except Exception:
+        logger.exception("Could not prepare the BepInEx loader in %s", game_dir)
+    if loader_active:
+        # Wine musi wczytać natywny winhttp.dll (Doorstop) z katalogu gry
+        bepinex_loader.apply_dll_override(env)
+
     launch_args = build_launch_args(
         user_data_folder,
         noeos=noeos,
@@ -870,6 +883,9 @@ def _launch_downloaded_windows_version(
                     str(compat_root / "pfx" / "drive_c" / "users" / "steamuser" / "AppData" / "Roaming" / "7DaysToDie"),
                 ])
                 + "\n"
+            )
+            log_fh.write(
+                f"bepinex_loader: {'active (WINEDLLOVERRIDES=' + env.get('WINEDLLOVERRIDES', '') + ')' if loader_active else 'not used'}\n"
             )
             log_fh.write(f"command: {shlex.join(command)}\n")
             subprocess.Popen(

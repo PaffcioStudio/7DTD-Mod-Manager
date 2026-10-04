@@ -40,6 +40,18 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
 import main as appmain
 
+# Test ma byc deterministyczny: gdy na maszynie dev dziala 7DTD, blokady gry
+# wylaczaja restore w trzech miejscach (guard w ModpackManager, przycisk
+# "Restore backup" w QML przez Game.isRunning z GameDetector, guard w
+# instances). Udajemy, ze zadna gra nie dziala - w kazdym z nich.
+from backend import game_process as _game_process
+from backend import modpack_manager as _modpack_manager
+_game_process.find_game_processes = lambda *a, **k: []
+_game_process.find_game_pids = lambda *a, **k: []
+_game_process.is_game_running = lambda: False
+_modpack_manager.is_game_running = lambda: False
+inst_mod.find_game_processes = lambda *a, **k: []
+
 results = []
 def check(name, ok):
     results.append((name, ok))

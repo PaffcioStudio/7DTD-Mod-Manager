@@ -28,10 +28,11 @@ import json
 import re
 import shutil
 import subprocess
+import http.cookiejar
 import urllib.error
 import urllib.request
 from services.i18n_message import message as i18n_message
-from backend.undead_legacy import MIRROR_URL, resolve_mirror_url
+from backend.undead_legacy import MIRROR_URL
 import zipfile
 from enum import Enum
 from pathlib import Path
@@ -188,11 +189,17 @@ def _http_download_file(
     pause_event=None,
     label: str = "",
     request_headers: Optional[dict[str, str]] = None,
+    use_cookies: bool = False,
 ) -> None:
     """Pobiera plik HTTP do dest, z PAUZĄ (DownloadPaused, .part zostaje)
     i WZNOWIENIEM przez HTTP Range. Serwer ignorujący Range odpowie 200
     zamiast 206 - wtedy startujemy od zera (rozpoznawane po kodzie).
-    Anulowanie rzuca OperationCancelled; błędy sieciowe DownloadError."""
+    Anulowanie rzuca OperationCancelled; błędy sieciowe DownloadError.
+
+    use_cookies=True: cały łańcuch przekierowań (np. ul.subquake.com ->
+    dropbox.com -> dropboxusercontent.com) idzie jedną sesją z cookie jar.
+    Podpisany link dropboxusercontent jest związany z sesją i działa raz,
+    więc nie wolno go „rozwiązać” osobnym requestem i dopiero potem pobrać."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
     downloaded = part.stat().st_size if part.exists() else 0
@@ -209,7 +216,12 @@ def _http_download_file(
             headers["Range"] = f"bytes={downloaded}-"
         request = urllib.request.Request(url, headers=headers)
         try:
-            resp = urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT)
+            if use_cookies:
+                opener = urllib.request.build_opener(
+                    urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+                resp = opener.open(request, timeout=REQUEST_TIMEOUT)
+            else:
+                resp = urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT)
         except urllib.error.URLError as exc:
             raise DownloadError(i18n_message("download.error.fetch", {"url": url, "error": str(exc)})) from exc
 
@@ -449,12 +461,14 @@ def download_and_extract(
                 if progress_cb:
                     progress_cb(1, 1, i18n_message("download.mod.extracting", {"name": zip_path.name}))
             elif kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR:
-                # Dropbox blocks the follow-up request when the signed URL is
-                # fetched without the same referrer/browser context that was
-                # used to resolve the public Undead Legacy mirror. Resolve the
-                # current signed URL immediately before every transfer attempt
-                # and keep that context on the actual ZIP request.
-                resolved_url = resolve_mirror_url(url)
+                # Dropbox (oficjalny mechanizm: link udostepniony z dl=1)
+                # odpowiada przekierowaniem na jednorazowy, podpisany link
+                # dropboxusercontent zwiazany z sesja (cookies). Dlatego NIE
+                # rozwiazujemy go osobnym requestem - stabilny URL mirrora
+                # idzie prosto do downloadera, ktory prowadzi caly lancuch
+                # przekierowan jedna sesja z cookie jar (Range przy wznowieniu
+                # jest przenoszony przez przekierowania). Swiezy link przy
+                # kazdej probie = wznowienie po restarcie aplikacji dziala.
                 request_headers = {
                     "User-Agent": (
                         "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) "
@@ -468,6 +482,7 @@ def download_and_extract(
                     resolved_url, zip_path, progress_cb=progress_cb,
                     cancel_event=cancel_event, pause_event=pause_event,
                     request_headers=request_headers,
+                    use_cookies=kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR,
                 )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             # Undead Legacy keeps the original archive. The download manager

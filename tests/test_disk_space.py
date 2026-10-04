@@ -121,11 +121,9 @@ def test_complete_zip_from_previous_attempt_is_reused_not_redownloaded():
         temp_dir = Path(d)
         with zipfile.ZipFile(temp_dir / "download.zip", "w") as zf:
             zf.writestr("Mods/UndeadLegacy/ModInfo.xml", "<xml />")
-        with patch.object(downloader, "resolve_mirror_url") as resolve, \
-             patch.object(downloader, "_http_download_file") as download:
+        with patch.object(downloader, "_http_download_file") as download:
             extracted = downloader.download_and_extract(MIRROR_URL, temp_dir)
         download.assert_not_called()
-        resolve.assert_not_called()
         assert (extracted / "Mods/UndeadLegacy/ModInfo.xml").is_file()
         assert (temp_dir / "download.zip").is_file()
 
@@ -134,8 +132,7 @@ def test_truncated_zip_is_not_reused():
     with tempfile.TemporaryDirectory() as d:
         temp_dir = Path(d)
         (temp_dir / "download.zip").write_bytes(b"PK\x03\x04 truncated")
-        with patch.object(downloader, "resolve_mirror_url", return_value="https://cdn.example/x.zip"), \
-             patch.object(downloader, "_http_download_file") as download, \
+        with patch.object(downloader, "_http_download_file") as download, \
              patch.object(downloader, "_extract_zip"):
             downloader.download_and_extract(MIRROR_URL, temp_dir)
         download.assert_called_once()
