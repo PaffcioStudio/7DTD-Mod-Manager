@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from backend.game_versions import required_game_branch
+from backend.scraper_client import select_concrete_game_version
 
 
 def test_alpha20_alias_resolves_to_steam_stable_branch():
@@ -98,3 +99,15 @@ def test_full_steam_branch_names_are_preserved(tmp_path, monkeypatch):
     assert gv.resolve_downloaded_branch("v3.0.1") == "v3.0.1"
     # bez public: najnowszy numerowany
     assert gv.resolve_downloaded_branch("v3") == "v3.2.0"
+
+
+def test_select_concrete_game_version_prefers_file_patch_over_v2_family():
+    assert select_concrete_game_version("v2", ["v2.6"]) == "v2.6"
+
+
+def test_select_concrete_game_version_keeps_exact_patch():
+    assert select_concrete_game_version("v2.6", ["v2.6"]) == "v2.6"
+
+
+def test_select_concrete_game_version_rejects_ambiguous_no_selection():
+    assert select_concrete_game_version("", ["v2.5", "v2.6"]) == ""

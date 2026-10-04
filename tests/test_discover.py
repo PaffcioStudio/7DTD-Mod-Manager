@@ -313,5 +313,65 @@ class MediaFireExternalDownloadTests(unittest.TestCase):
 
 
 
+    def test_mediafire_link_is_recovered_from_raw_mod_page_when_payload_has_no_external_links(self):
+        from backend.scraper_client import SevenDaysModsClient
+
+        # Przypadek z Your End: strona pokazuje plik MediaFire, ale payload
+        # Nuxt nie wystawia go w ``external_links``. Wcześniej kończyło się to
+        # na download.mod.noFiles.
+        html = (
+            '<script id="__NUXT_DATA__">'
+            + json.dumps([{
+                "id": "01KQK241ZK81CRWJ8F05P77HEG",
+                "slug": "your-end",
+                "title": "Your End",
+                "game_versions": ["V2 Mods"],
+                "mod_files": [],
+                "external_links": [],
+            }])
+            + '</script>'
+            '<a href="https://www.mediafire.com/file/gm61vfy91x5l3lq/'
+            'Your_End_2.4.1.7_Stable_V2.6%2528b14%2529.zip/file">Download</a>'
+        )
+        response = Mock(status_code=200, text=html)
+        client = SevenDaysModsClient()
+        client.session.get = Mock(return_value=response)
+
+        mod, page_url = client._fetch_mod("your-end")
+
+        self.assertEqual(page_url, "https://7daystodiemods.com/mods/your-end")
+        self.assertEqual(len(mod["external_links"]), 1)
+        self.assertEqual(mod["external_links"][0]["url"], self.MEDIAFIRE_URL)
+        self.assertEqual(
+            mod["external_links"][0]["label"],
+            "Your End 2.4.1.7 Stable V2.6(b14).zip",
+        )
+
+    def test_mediafire_fallback_is_visible_through_get_mod(self):
+        from backend.scraper_client import SevenDaysModsClient
+
+        html = (
+            '<script id="__NUXT_DATA__">'
+            + json.dumps([{
+                "id": "mod-id",
+                "slug": "your-end",
+                "title": "Your End",
+                "game_versions": ["V2 Mods"],
+                "mod_files": [],
+            }])
+            + '</script>'
+            '<a href="' + self.MEDIAFIRE_URL + '">MediaFire</a>'
+        )
+        response = Mock(status_code=200, text=html)
+        client = SevenDaysModsClient()
+        client.session.get = Mock(return_value=response)
+
+        info = client.get_mod("your-end")
+
+        self.assertEqual(len(info.external_links), 1)
+        self.assertEqual(info.external_links[0].url, self.MEDIAFIRE_URL)
+        self.assertFalse(info.external_links[0].is_direct_file)
+
+
 if __name__ == "__main__":
     unittest.main()

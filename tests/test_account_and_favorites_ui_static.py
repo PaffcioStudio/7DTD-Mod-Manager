@@ -95,3 +95,16 @@ def test_account_menu_is_clickable_and_anchored_under_account_button():
     assert "accountAnchorTopBoundary(host)" in source
     assert "return root.anchorItem.mapToItem(host, root.anchorItem.width, 0).x" in source
     assert "root.menuParent.mapToItem(host, 0, root.menuParent.height).y" in source
+
+
+def test_discover_version_is_not_dropped_when_url_delegates_to_web_scraper():
+    source = (ROOT / "src" / "backend" / "download_manager.py").read_text(encoding="utf-8")
+    assert 'self.startModDownloadWithVersion(url, game_version)' in source
+
+
+def test_instance_backup_metadata_preserves_game_branch():
+    source = (ROOT / "src" / "backend" / "modpacks.py").read_text(encoding="utf-8")
+    assert 'game_branch: str = ""' in source
+    assert '"game_branch": r.game_branch' in source
+    assert 'game_branch=str(instance.game_branch or "")' in source
+    assert 'game_branch=record.game_branch' in source

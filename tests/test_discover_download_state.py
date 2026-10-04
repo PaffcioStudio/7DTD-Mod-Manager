@@ -59,3 +59,12 @@ def test_restored_game_downloads_have_explicit_auto_resume_hook():
     assert 'and i.restored_from_queue' in source
     assert 'self._game_versions.resume(item.ref_id)' in source
     assert 'QTimer.singleShot(0, downloads.resumeRestoredGameDownloads)' in main
+
+
+def test_overhaul_instance_uses_concrete_downloaded_game_branch():
+    source = (ROOT / "src" / "backend" / "download_manager.py").read_text(encoding="utf-8")
+    assert "select_concrete_game_version" in source
+    assert 'item.game_version = install_branch' in source
+    assert 'game_branch=required_branch' in source
+    assert 'required_branch = resolve_downloaded_branch(required_branch) or required_branch' in source
+    assert '"MOD game branch: selected=%r detected=%s -> install=%r"' in source

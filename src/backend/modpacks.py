@@ -46,6 +46,7 @@ class BackupRecord:
     flags: dict                   # {noeos, noeac, skip_news_screen, skip_intro}
     path: str = ""                # folder kopii
     description: str = ""
+    game_branch: str = ""
     created_at: str = ""
     updated_at: str = ""
     item_count: int = 0
@@ -71,6 +72,7 @@ def load_backups() -> list[BackupRecord]:
                 flags=item.get("flags") if isinstance(item.get("flags"), dict) else {},
                 path=str(item.get("path", "")),
                 description=str(item.get("description", "")),
+                game_branch=str(item.get("game_branch", "")),
                 created_at=str(item.get("created_at", "")),
                 updated_at=str(item.get("updated_at", "")),
                 item_count=int(item.get("item_count", 0)),
@@ -89,6 +91,7 @@ def save_backups(records: list[BackupRecord]) -> None:
                 "flags": dict(r.flags),
                 "path": r.path,
                 "description": r.description,
+                "game_branch": r.game_branch,
                 "created_at": r.created_at,
                 "updated_at": r.updated_at,
                 "item_count": r.item_count,
@@ -193,6 +196,7 @@ def create_backup_from_instance(
             "skip_news_screen": instance.flag_skip_news_screen,
             "skip_intro": instance.flag_skip_intro,
         },
+        game_branch=str(instance.game_branch or ""),
         path=str(dest),
         created_at=datetime.now().isoformat(timespec="seconds"),
         updated_at=datetime.now().isoformat(timespec="seconds"),
@@ -268,6 +272,7 @@ def restore_backup(record: BackupRecord, *,
             flag_noeac=bool(flags.get("noeac", False)),
             created_at=record.created_at,
             description=record.description,
+            game_branch=record.game_branch,
         )
         instances.append(target)
         inst_mod.save_instances(instances)

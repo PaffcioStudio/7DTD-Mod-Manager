@@ -47,6 +47,7 @@ from backend.scraper_client import (
     parse_mod_url,
     detect_file_game_versions,
     game_version_matches,
+    select_concrete_game_version,
 )
 from backend.game_versions import (
     required_game_branch, resolve_downloaded_branch, version_requirement_text,
@@ -1128,7 +1129,7 @@ class DownloadManager(QObject):
         if not url:
             return
         if "7daystodiemods.com" in url:
-            self.startModDownload(url)
+            self.startModDownloadWithVersion(url, game_version)
             return
         kind = modpack_downloader.detect_source_kind(url)
         if kind == modpack_downloader.DownloadSourceKind.UNSUPPORTED \
@@ -1479,6 +1480,49 @@ class DownloadManager(QObject):
                             (f for f in info.files if f.file_type == "main"), None) \
                             or (info.files[0] if info.files else None)
 
+                # Zachowujemy konkretną wersję gry dla automatycznie tworzonej
+                # instancji. Katalog może deklarować szeroką rodzinę (np.
+                # ``V2 Mods``), a nazwa konkretnego pliku/linku wskazywać np.
+                # ``V2.6``. W takim przypadku instancja ma dostać ``v2.6``,
+                # a nie pustą wartość oznaczającą Steam.
+                artifact_versions: list[str] = []
+                if main_file is not None:
+                    artifact_versions = detect_file_game_versions(
+                        label=main_file.label,
+                        filename=main_file.filename,
+                        mod_version=main_file.version,
+                    )
+                elif chosen_ext is not None:
+                    artifact_versions = detect_file_game_versions(
+                        label=chosen_ext.label,
+                        filename=chosen_ext.filename,
+                        mod_version=chosen_ext.version,
+                    )
+
+                inferred_branch = select_concrete_game_version(
+                    selected_game_version, artifact_versions)
+                if not inferred_branch:
+                    # Gdy nazwa pliku nic nie mówi, wykorzystujemy deklarację
+                    # moda (np. ``V2 Mods``) i rozwiązujemy ją do konkretnego
+                    # zainstalowanego brancha, np. ``v2`` -> ``v2.6``.
+                    inferred_branch = select_concrete_game_version(
+                        selected_game_version, list(info.game_versions or []))
+
+                install_branch = inferred_branch or item.game_version
+                if install_branch:
+                    install_branch = required_game_branch(install_branch)
+                    install_branch = resolve_downloaded_branch(install_branch) or install_branch
+                    if not self._is_downloaded_game_version(install_branch):
+                        raise modpack_downloader.DownloadError(
+                            i18n_message("download.gameVersion.missing", {
+                                "branch": install_branch
+                            })
+                        )
+                    item.game_version = install_branch
+                install_log.info(
+                    "MOD game branch: selected=%r detected=%s -> install=%r",
+                    selected_game_version, artifact_versions, item.game_version or "Steam")
+
                 version = re.sub(r"[^\w.-]+", "_",
                                  (main_file.version if main_file else None)
                                  or info.current_version or "latest")
@@ -1729,6 +1773,8 @@ class DownloadManager(QObject):
             instance_name = f"{base_name} ({counter})"[:60]
             counter += 1
         required_branch = required_game_branch(game_version)
+        if required_branch:
+            required_branch = resolve_downloaded_branch(required_branch) or required_branch
         instance = inst_mod.create_instance(
             instance_name,
             str(inst_mod.suggest_data_dir_for_name(instance_name)),
@@ -1738,8 +1784,8 @@ class DownloadManager(QObject):
             instances=registry,
         )
         install_log.info(
-            "INSTANCE create: name=%r -> %s (description=%r)",
-            instance.name, instance.data_dir, instance.description)
+            "INSTANCE create: name=%r -> %s (game_branch=%r, description=%r)",
+            instance.name, instance.data_dir, instance.game_branch, instance.description)
         fs.ensure_dir(instance.mods_dir)
         for folder in mod_folders:
             if cancel.is_set():
@@ -1770,6 +1816,8 @@ class DownloadManager(QObject):
         instance_name = (title or slug)[:60]
         registry = inst_mod.load_instances()
         required_branch = required_game_branch(game_version)
+        if required_branch:
+            required_branch = resolve_downloaded_branch(required_branch) or required_branch
         inst_obj = inst_mod.create_instance(
             instance_name,
             str(inst_mod.suggest_data_dir_for_name(instance_name)),

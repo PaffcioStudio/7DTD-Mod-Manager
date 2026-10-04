@@ -180,6 +180,45 @@ def game_version_matches(selected: str, detected_versions: list[str] | tuple[str
     return False
 
 
+def select_concrete_game_version(
+    selected_game_version: str,
+    detected_versions: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Choose the most specific game version compatible with the selection.
+
+    This is used when a catalog entry only says ``V2 Mods`` but the actual
+    downloadable archive identifies a concrete branch such as ``V2.6``.  A
+    concrete detected version is safer for an instance than storing the broad
+    family name, because it lets the launcher bind the instance to the exact
+    downloaded Steam branch.  With no selection, exactly one detected version
+    is accepted; ambiguous input returns an empty string.
+    """
+    values: list[str] = []
+    for raw in detected_versions or ():
+        normalized = _normalize_detected_game_version(str(raw))
+        if normalized and normalized not in values:
+            values.append(normalized)
+
+    if not values:
+        return ""
+
+    selected = (selected_game_version or "").strip()
+    if selected:
+        matching = [value for value in values
+                    if game_version_matches(selected, [value])]
+    else:
+        matching = values if len(values) == 1 else []
+
+    if not matching:
+        return ""
+
+    def specificity(value: str) -> tuple[int, tuple[int, ...]]:
+        info = _game_version_family(value)
+        return (len(info[1]), info[1]) if info else (0, ())
+
+    return max(matching, key=specificity)
+
+
 def mod_file_matches_game_version(
     file: "ModFile",
     selected_game_version: str,
@@ -272,6 +311,10 @@ _MEDIAFIRE_SIZE_META_RE = re.compile(
     r'<meta[^>]+(?:property|name)=[\"\']og:filesize[\"\'][^>]+content=[\"\'](\d+)',
     re.I,
 )
+_MEDIAFIRE_SHARE_IN_PAGE_RE = re.compile(
+    r'https?://(?:www\.)?mediafire\.com/(?:file|view|download)/[^\"\'<>&\s\\]+',
+    re.I,
+)
 
 # https://mediafilez.forgecdn.net/files/<file_id // 1000>/<file_id % 1000>/<nazwa>
 FORGECDN_URL = "https://mediafilez.forgecdn.net/files/{major}/{minor}/{name}"
@@ -319,7 +362,14 @@ def _extract_mediafire_direct_url(page_html: str) -> str | None:
 def _mediafire_filename_from_url(url: str) -> str:
     from urllib.parse import unquote_plus
 
-    name = unquote_plus(os.path.basename(urlsplit(url).path))
+    path = urlsplit(url).path.rstrip("/")
+    name = unquote_plus(os.path.basename(path))
+    # Strona współdzielona MediaFire kończy się na ``/file``; właściwa nazwa
+    # archiwum jest wtedy poprzednim segmentem ścieżki.
+    if name.casefold() in {"file", "download", "view"}:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) >= 2:
+            name = unquote_plus(unquote_plus(parts[-2])).replace("_", " ")
     return name or "mediafire-download.zip"
 
 
@@ -332,6 +382,26 @@ def _mediafire_size_from_html(page_html: str) -> int:
         return max(0, int(match.group(1)))
     except (TypeError, ValueError):
         return 0
+
+
+def _extract_mediafire_share_urls_from_page(page_html: str) -> list[str]:
+    """Wyciąga publiczne linki MediaFire osadzone bezpośrednio w HTML strony moda.
+
+    Nie każda wersja payloadu Nuxt zwraca ``external_links`` w obiekcie moda.
+    Strona nadal musi jednak mieć odnośnik do zakładki Download, dlatego jako
+    bezpieczny fallback skanujemy surowy HTML wyłącznie pod kątem MediaFire.
+    W ten sposób nie zaczynamy przypadkowo traktować obrazków/analityki jako
+    plików do pobrania.
+    """
+    if not page_html:
+        return []
+    text = html.unescape(page_html).replace(r"\/", "/")
+    urls: list[str] = []
+    for match in _MEDIAFIRE_SHARE_IN_PAGE_RE.finditer(text):
+        url = match.group(0).rstrip(".,;)")
+        if url not in urls and _is_mediafire_share_url(url):
+            urls.append(url)
+    return urls
 
 
 def _filename_with_direct_suffix(text: str | None) -> str | None:
@@ -442,14 +512,46 @@ class SevenDaysModsClient:
     # ------------------------------------------------------------- strona
 
     def _fetch_mod(self, url_or_slug: str) -> tuple[dict, str]:
-        """Pobiera stronę moda i zwraca (obiekt moda z payloadu, url strony)."""
+        """Pobiera stronę moda i zwraca (obiekt moda z payloadu, url strony).
+
+        Niektóre wpisy 7daystodiemods.com mają link zewnętrzny widoczny w
+        zakładce Download, ale nie wystawiają go dziś w polu
+        ``external_links`` payloadu Nuxt. Dla takich stron dokładamy bezpieczny
+        fallback z surowego HTML (aktualnie MediaFire).
+        """
         slug = parse_mod_url(url_or_slug)
         page_url = f"{BASE_URL}/mods/{slug}"
         resp = self.session.get(page_url, timeout=self.timeout)
         if resp.status_code == 404:
             raise ModNotFoundError(i18n_message("discover.error.modNotFound", {"url": page_url}))
         resp.raise_for_status()
-        return self._find_main_mod(extract_payload(resp.text)), page_url
+        mod = self._find_main_mod(extract_payload(resp.text))
+
+        if not mod.get("external_links"):
+            fallback_urls = _extract_mediafire_share_urls_from_page(resp.text)
+            if fallback_urls:
+                # Kopia, aby nie mutować współdzielonego obiektu z payloadu.
+                mod = dict(mod)
+                external_links = list(mod.get("external_links") or [])
+                existing = {
+                    str(raw.get("url"))
+                    for raw in external_links
+                    if isinstance(raw, dict) and raw.get("url")
+                }
+                for index, url in enumerate(fallback_urls):
+                    if url in existing:
+                        continue
+                    external_links.append({
+                        "id": f"html-mediafire-{index + 1}",
+                        "url": url,
+                        "label": _mediafire_filename_from_url(url),
+                        "file_type": "external",
+                        "mod_version": None,
+                        "sort_order": 10000 + index,
+                    })
+                mod["external_links"] = external_links
+
+        return mod, page_url
 
     def get_mod(self, url_or_slug: str) -> ModInfo:
         """Pobiera stronę moda i parsuje dane z payloadu __NUXT_DATA__."""
