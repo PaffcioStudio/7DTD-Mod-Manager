@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from backend.nuxtdata import build_all, extract_payload
 from backend.scraper_client import BASE_URL, USER_AGENT
+from backend.undead_legacy import fetch_latest_release
 from services import filesystem_service as fs
 from services.i18n_message import message as i18n_message
 
@@ -21,7 +22,9 @@ logger = logging.getLogger(__name__)
 CACHE_TTL = 900
 
 # dołączony do aplikacji katalog overhauli (assets/manifests/) - provider
-# "GitHub" w Odkrywaj; plik jest bundlowany do .deb/.AppImage razem z resztą
+# "GitHub" w Odkrywaj; plik jest bundlowany do .deb/.AppImage razem z resztą.
+# Wyjątkiem są wpisy z dynamicznym źródłem wersji (obecnie Undead Legacy),
+# dla których odświeżamy metadane z oficjalnej strony.
 MANIFEST_DIR = Path(__file__).resolve().parents[2] / "assets" / "manifests"
 
 
@@ -30,8 +33,8 @@ def _slugify(name: str) -> str:
     return slug or "overhaul"
 
 
-def fetch_local_catalog(query: str = "") -> dict:
-    """Katalog z manifest_overhaul.json (bez sieci). Filtruje po nazwie,
+def fetch_local_catalog(query: str = "", refresh: bool = False) -> dict:
+    """Katalog z manifest_overhaul.json. Filtruje po nazwie,
     autorze i opisie; zwraca ten sam kształt wyniku co fetch_catalog."""
     items = []
     try:
@@ -41,7 +44,8 @@ def fetch_local_catalog(query: str = "") -> dict:
         logger.warning("Local overhaul manifest missing or invalid: %s",
                        MANIFEST_DIR / "manifest_overhaul.json")
         data = {}
-    game_version = str(data.get("game_version", "")).strip()
+    default_game_version = str(data.get("game_version", "")).strip()
+    dynamic_failed = False
     needle = query.strip().lower()
     for entry in data.get("overhauls", []):
         if not isinstance(entry, dict):
@@ -52,6 +56,18 @@ def fetch_local_catalog(query: str = "") -> dict:
         # opcjonalne tłumaczenie EN; QML wybiera pole wg języka UI
         description_en = str(entry.get("description_en", "")).strip()
         thumbnail = str(entry.get("thumbnail", "")).strip()
+        entry_game_version = str(entry.get("game_version") or default_game_version).strip()
+        entry_version = str(entry.get("version", "")).strip()
+        entry_download_url = str(entry.get("download_url", "")).strip()
+        if entry.get("dynamic_source") == "undead_legacy" or name.casefold() == "undead legacy":
+            try:
+                latest = fetch_latest_release(refresh=refresh)
+                entry_version = latest["version"]
+                entry_game_version = latest["game_version"]
+                entry_download_url = latest["download_url"]
+            except Exception:
+                dynamic_failed = True
+                logger.warning("Could not refresh Undead Legacy metadata", exc_info=True)
         if needle and needle not in name.lower() \
                 and needle not in author.lower() \
                 and needle not in description.lower() \
@@ -66,17 +82,21 @@ def fetch_local_catalog(query: str = "") -> dict:
             "thumbnail": thumbnail if thumbnail.startswith("https://") else "",
             "thumbCrop": bool(entry.get("thumbnail_crop", False)),
             "category": "Overhaul",
-            "versions": game_version,
-            "game_version": game_version,
-            "version": str(entry.get("version", "")).strip(),
+            "versions": entry_game_version,
+            "game_version": entry_game_version,
+            "version": entry_version,
             "downloads": 0,
-            "url": str(entry.get("download_url", "")).strip(),
+            "url": entry_download_url,
         })
     return {"items": items, "total": len(items), "page": 1, "pages": 1,
-            "categories": [], "versions": [], "offline": False}
+            "categories": [], "versions": [], "offline": dynamic_failed}
 
 
 def parse_catalog(html: str, category: str = "", version: str = "") -> dict:
+    # Keep the selected game-version branch attached to each discovered item.
+    # The download path may later delegate to the web scraper, so the branch
+    # must survive that hand-off instead of being inferred again from the URL.
+    game_version = str(version or "").strip()
     values = build_all(extract_payload(html))
     data = next((v for v in values if isinstance(v, dict) and "mods-list" in v), {})
     listing = data.get("mods-list")
@@ -108,6 +128,7 @@ def parse_catalog(html: str, category: str = "", version: str = "") -> dict:
             "thumbnail": thumbnail if thumbnail.startswith("https://") else "",
             "category": ", ".join(c.get("name", "") for c in categories),
             "versions": ", ".join(v.get("name", "") for v in versions),
+            "game_version": game_version,
             "version": mod.get("current_version") or "",
             "downloads": int(mod.get("download_count") or 0),
             "url": f"{BASE_URL}/mods/{slug}",
@@ -244,7 +265,7 @@ class DiscoverManager(QObject):
         def worker():
             try:
                 if provider == "local":
-                    self.ready.emit(generation, fetch_local_catalog(request[0]), "")
+                    self.ready.emit(generation, fetch_local_catalog(request[0], refresh=request[4]), "")
                 else:
                     self.ready.emit(generation, fetch_catalog(*request), "")
             except Exception as exc:

@@ -81,6 +81,7 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 - Filter by category, game version, time range, and adult-content visibility.
 - Open detailed mod pages and download supported files directly from the launcher.
 - Support GitHub-based overhaul sources where the source provides a supported archive.
+- Support a dynamic official-page source for actively updated overhauls: the manifest can keep a stable download endpoint while the current release version is refreshed at runtime.
 - Show installation state based on real library/instance contents.
 
 ### Profiles
@@ -197,6 +198,12 @@ Manual Debian installation:
 ```bash
 sudo apt install ./dist/7dtd-mod-manager_<version>_<arch>.deb
 ```
+
+## Dynamic overhaul sources
+
+Some overhauls do not expose a permanent archive URL. For those entries the manifest stores a stable source such as the official download endpoint and a `dynamic_source` identifier. The launcher refreshes the published version from the official page when the local overhaul catalog is loaded, while the downloader resolves the stable endpoint to the current archive immediately before downloading. This avoids pinning the application to signed Dropbox URLs that can change when the project publishes a new release.
+
+For **Undead Legacy**, the catalog is tied to game branch **v2.6** and uses the official **Download (Mirror)** endpoint. The packaged manifest keeps the last known version as a fallback, but a successful metadata refresh replaces it with the currently published release.
 
 ## Game-version safety
 

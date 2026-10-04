@@ -31,6 +31,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from services.i18n_message import message as i18n_message
+from backend.undead_legacy import MIRROR_URL, resolve_mirror_url
 import zipfile
 from enum import Enum
 from pathlib import Path
@@ -64,6 +65,7 @@ class DownloadSourceKind(Enum):
     GIT_REPO = "git_repo"                # klonowalne repo (GitHub/Azure DevOps/GitLab/...)
     GITHUB_RELEASES = "github_releases"  # .../releases (bez konkretnego tagu) -> GitHub API
     DIRECT_ZIP = "direct_zip"            # bezpośredni link do pliku .zip
+    UNDEAD_LEGACY_MIRROR = "undead_legacy_mirror"  # stable redirect -> current ZIP
     UNSUPPORTED = "unsupported"          # np. NexusMods albo strona-witryna - nieobsługiwane
 
 
@@ -128,6 +130,8 @@ def detect_source_kind(url: str) -> DownloadSourceKind:
     url = (url or "").strip()
     if not url:
         return DownloadSourceKind.UNSUPPORTED
+    if url.rstrip("/") == MIRROR_URL:
+        return DownloadSourceKind.UNDEAD_LEGACY_MIRROR
     if _NEXUSMODS_RE.match(url) or _KNOWN_MOD_LISTING_SITE_RE.match(url):
         return DownloadSourceKind.UNSUPPORTED
     # query/fragment nie zmieniają typu źródła - GitLab archive i inne
@@ -155,6 +159,7 @@ def source_kind_label(kind: DownloadSourceKind) -> str:
         DownloadSourceKind.GIT_REPO: i18n_message("download.source.git"),
         DownloadSourceKind.GITHUB_RELEASES: i18n_message("download.source.github"),
         DownloadSourceKind.DIRECT_ZIP: i18n_message("download.source.zip"),
+        DownloadSourceKind.UNDEAD_LEGACY_MIRROR: i18n_message("download.source.zip"),
     }.get(kind, i18n_message("download.source.unknown"))
 
 
@@ -394,10 +399,11 @@ def download_and_extract(
             )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             zip_path.unlink(missing_ok=True)
-        elif kind == DownloadSourceKind.DIRECT_ZIP:
+        elif kind in (DownloadSourceKind.DIRECT_ZIP, DownloadSourceKind.UNDEAD_LEGACY_MIRROR):
             zip_path = temp_dir / "download.zip"
+            resolved_url = resolve_mirror_url(url) if kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR else url
             _http_download_file(
-                url, zip_path, progress_cb=progress_cb,
+                resolved_url, zip_path, progress_cb=progress_cb,
                 cancel_event=cancel_event, pause_event=pause_event,
             )
             _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)

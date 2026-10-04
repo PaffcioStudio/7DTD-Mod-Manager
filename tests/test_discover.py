@@ -11,6 +11,7 @@ from PySide6.QtCore import QCoreApplication
 
 from backend.discover import DiscoverManager, fetch_catalog, parse_catalog
 from backend.modpack_downloader import DownloadSourceKind, detect_source_kind
+from backend.undead_legacy import MIRROR_URL, fetch_latest_release
 
 
 def catalog_html(items=None):
@@ -140,6 +141,47 @@ class DiscoverTests(unittest.TestCase):
         self.assertFalse(manager.busy)
         self.assertEqual(calls, ["first", "latest"])
         self.assertEqual(manager.items[0]["title"], "latest")
+
+    def test_undead_legacy_mirror_source_is_supported(self):
+        self.assertEqual(detect_source_kind(MIRROR_URL), DownloadSourceKind.UNDEAD_LEGACY_MIRROR)
+
+    def test_undead_legacy_mirror_uses_zip_download_flavor(self):
+        downloads = (Path(__file__).resolve().parents[1] / "src" / "backend" / "download_manager.py").read_text(encoding="utf-8")
+        assert 'DownloadSourceKind.UNDEAD_LEGACY_MIRROR: "zip"' in downloads
+
+    def test_undead_legacy_page_parser_extracts_v26_release_and_mirror(self):
+        html = """
+        <table><tr><th>Game Version</th><th>Undead Legacy Version</th><th>Downloads</th></tr>
+        <tr><td>v2.6</td><td>2026.09.28 - 2.7.40</td><td>
+          <a href=\"/dl?v=exp_part1\">Download Part 1</a>
+          <a href=\"/dl?v=mirror\" title=\"Experimental Version of Undead Legacy\">Download (Mirror)</a>
+        </td></tr></table>
+        """
+        fake = Mock(text=html)
+        with patch("backend.undead_legacy.requests.get", return_value=fake):
+            result = fetch_latest_release(refresh=True)
+        self.assertEqual(result["version"], "2.7.40")
+        self.assertEqual(result["game_version"], "v2.6")
+        self.assertEqual(result["download_url"], MIRROR_URL)
+
+    def test_local_catalog_uses_per_entry_game_version_and_dynamic_version(self):
+        html = """
+        <table><tr><td>Game Version</td><td>Undead Legacy Version</td><td>Downloads</td></tr>
+        <tr><td>v2.6</td><td>2026.09.29 - 2.7.41</td><td><a href=\"/dl?v=mirror\">Download (Mirror)</a></td></tr>
+        </table>
+        """
+        fake = Mock(text=html)
+        with patch("backend.discover.fetch_latest_release", return_value={
+            "version": "2.7.41", "game_version": "v2.6",
+            "release_date": "2026.09.29", "download_url": MIRROR_URL,
+        }), patch("backend.discover.MANIFEST_DIR", Path(__file__).resolve().parents[1] / "assets" / "manifests"):
+            from backend.discover import fetch_local_catalog
+            items = fetch_local_catalog("Undead Legacy", refresh=True)["items"]
+        undead = next(item for item in items if item["title"] == "Undead Legacy")
+        self.assertEqual(undead["version"], "2.7.41")
+        self.assertEqual(undead["game_version"], "v2.6")
+        self.assertEqual(undead["versions"], "v2.6")
+        self.assertEqual(undead["url"], MIRROR_URL)
 
 
 class AzureExternalDownloadTests(unittest.TestCase):

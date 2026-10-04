@@ -147,6 +147,18 @@
       "author": "TekjaGameplays",
       "download_url": "https://github.com/TekjaGameplays/TongoMod36",
       "thumbnail": "https://i.ytimg.com/vi/M9zCzpe0rTc/hq720.jpg?sqp=-oaymwEXCK4FEIIDSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLDdIIgCmh4_G1cksOnK6jcGzurZ8Q"
+    },
+    {
+      "name": "Undead Legacy",
+      "version": "2.7.40",
+      "description": "Undead Legacy to kompleksowa modyfikacja do 7 Days to Die, rozwijana od lat przez moddera Subquake. Jej głównym celem jest pogłębienie immersji oraz rozbudowanie wielu mechanik rozgrywki. Mod wprowadza całkowicie przebudowany interfejs użytkownika, który ułatwia zarządzanie przedmiotami dzięki opcjom sortowania i wyszukiwania. Klasyczny ekwipunek oparty na slotach został zastąpiony systemem udźwigu, w którym waga zebranych przedmiotów wpływa na prędkość poruszania się postaci oraz sprawność pojazdów. \n\nDużych zmian doczekał się również system progresji. Zamiast standardowego odblokowywania umiejętności gracz korzysta z wielopoziomowego systemu badań, w którym niepotrzebne schematy można przetwarzać na dane badawcze, aby poznawać nowe technologie. Rzemiosło jest bardziej rozbudowane i wymaga wielu półproduktów potrzebnych do tworzenia bardziej zaawansowanych przedmiotów. \n\nMod dodaje szeroki wybór nowych broni, narzędzi i pojazdów, a także pozwala naprawiać porzucone na mapie wraki samochodów. Większy nacisk na realizm widać także w interakcjach ze światem - między innymi potrzebne są puste pojemniki do nabierania wody lub paliwa. Do tego dochodzi system otwierania zamków w formie zręcznościowej minigry oraz kolejne zmiany mające uczynić rozgrywkę bardziej angażującą.",
+      "description_en": "Undead Legacy is a comprehensive overhaul for 7 Days to Die, developed over the years by modder Subquake. Its main goal is to deepen immersion while expanding and reworking many core gameplay mechanics. The mod introduces a completely redesigned user interface with sorting and search options that make item management much easier. The classic slot-based inventory is replaced by an encumbrance system in which the weight of carried items affects the player's movement speed as well as vehicle performance. \n\nProgression has also been heavily reworked. Instead of the standard skill-unlock system, players use a multi-tier research system where unwanted schematics can be converted into research data used to learn new technologies. Crafting is more involved as well, with numerous intermediate materials required to produce more advanced items. \n\nThe overhaul adds a wide range of new weapons, tools, and vehicles, and also lets players repair abandoned car wrecks found around the map. Its focus on realism extends to world interactions - for example, empty containers are needed to collect water or fuel. There is also a lockpicking mechanic presented as a skill-based minigame, along with many other changes designed to make survival and progression feel more immersive.",
+      "author": "Subquake",
+      "game_version": "v2.6",
+      "download_url": "https://ul.subquake.com/dl?v=mirror",
+      "version_source_url": "https://ul.subquake.com/download",
+      "dynamic_source": "undead_legacy",
+      "thumbnail": "https://i.ytimg.com/vi/3tRd7tNzTXk/maxresdefault.jpg"
     }
   ]
 }

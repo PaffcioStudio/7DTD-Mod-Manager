@@ -1157,6 +1157,10 @@ class DownloadManager(QObject):
             modpack_downloader.DownloadSourceKind.GIT_REPO: "git",
             modpack_downloader.DownloadSourceKind.GITHUB_RELEASES: "github",
             modpack_downloader.DownloadSourceKind.DIRECT_ZIP: "zip",
+            # Undead Legacy uses a stable redirect which resolves to the
+            # current ZIP archive at download time. It still behaves like a
+            # normal resumable ZIP download once queued.
+            modpack_downloader.DownloadSourceKind.UNDEAD_LEGACY_MIRROR: "zip",
         }[kind]
         title = (title or "").strip() or url.rstrip("/").rsplit("/", 1)[-1] or url
         item = DownloadItem(
