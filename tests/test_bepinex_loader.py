@@ -160,3 +160,47 @@ def test_launch_and_install_are_wired_to_loader():
     dm = (ROOT / "src/backend/download_manager.py").read_text(encoding="utf-8")
     assert dm.count("loader_root=bepinex_loader.find_loader_root(") == 2
     assert "bepinex_loader.stash_loader(loader_root, instance.data_dir)" in dm
+
+
+def test_sync_links_mod_resources_into_game_dir_and_cleans_up(tmp_path):
+    """Undead Legacy sztywno ladowal #Mods/UndeadLegacy/Resources/*.ulm z
+    katalogu gry -> 'Loading AssetBundle failed: Parent folder not found!'."""
+    pack = _make_pack(tmp_path / "pack")
+    data_dir = tmp_path / "instances/ul"
+    res = data_dir / "Mods/UndeadLegacy/Resources"
+    res.mkdir(parents=True)
+    (res / "Subquake_Sounds.ulm").write_bytes(b"bundle")
+    (data_dir / "Mods/UndeadLegacy/ModInfo.xml").write_text("<xml/>")
+    bl.stash_loader(pack, data_dir)
+    game = tmp_path / "game"
+    (game / "Mods").mkdir(parents=True)
+
+    assert bl.sync_game_dir(game, data_dir) is True
+    link = game / "Mods/UndeadLegacy/Resources"
+    assert link.is_symlink()
+    assert (link / "Subquake_Sounds.ulm").read_bytes() == b"bundle"
+    # tylko zasoby: mod nie moze zaladowac sie drugi raz z katalogu gry
+    assert not (game / "Mods/UndeadLegacy/ModInfo.xml").exists()
+    assert "Mods/UndeadLegacy/Resources" in json.loads(
+        (game / ".modmanager-loader.json").read_text())["files"]
+    assert bl.sync_game_dir(game, data_dir) is True  # idempotentne
+
+    assert bl.sync_game_dir(game, None) is False
+    assert not (game / "Mods/UndeadLegacy").exists()
+    assert (game / "Mods").is_dir(), "katalog Mods nalezy do gry"
+    assert (res / "Subquake_Sounds.ulm").read_bytes() == b"bundle", "dane instancji nietkniete"
+
+
+def test_sync_does_not_touch_real_resources_folder_in_game_dir(tmp_path):
+    pack = _make_pack(tmp_path / "pack")
+    data_dir = tmp_path / "instances/ul"
+    (data_dir / "Mods/UndeadLegacy/Resources").mkdir(parents=True)
+    bl.stash_loader(pack, data_dir)
+    game = tmp_path / "game"
+    manual = game / "Mods/UndeadLegacy/Resources"
+    manual.mkdir(parents=True)
+    (manual / "mine.ulm").write_bytes(b"manual")
+    bl.sync_game_dir(game, data_dir)
+    assert not manual.is_symlink()
+    bl.sync_game_dir(game, None)
+    assert (manual / "mine.ulm").read_bytes() == b"manual"

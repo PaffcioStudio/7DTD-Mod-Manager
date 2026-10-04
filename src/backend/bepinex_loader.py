@@ -48,6 +48,15 @@ DLL_OVERRIDE = "winhttp=n,b"
 _LOADER_FILES = ("winhttp.dll", "doorstop_config.ini")
 _LOADER_DIRS = ("BepInEx",)
 
+# Podfoldery modow, ktore overhaul adresuje SZTYWNO wzgledem katalogu gry
+# (np. "#Mods/UndeadLegacy/Resources/x.ulm" albo
+# "Data/Bundles/Standalone/../../../Mods/UndeadLegacy/Resources/x.ulm").
+# Mody instancji leza w <instancja>/Mods, wiec bez dowiazania gra konczy z
+# "Loading AssetBundle ... failed: Parent folder not found!". Linkujemy TYLKO
+# te zasoby (nie ModInfo.xml/Config/DLL), zeby mod nie zaladowal sie drugi raz
+# z <gra>/Mods obok <instancja>/Mods.
+_GAME_RELATIVE_MOD_DIRS = ("Resources",)
+
 
 def _child(directory: Path, name: str) -> Path | None:
     """Element katalogu o danej nazwie, ignorując wielkość liter."""
@@ -175,7 +184,10 @@ def _safe_rel(game_dir: Path, rel: str) -> Path | None:
     """Ścieżka z manifestu musi zostać wewnątrz katalogu gry."""
     target = (game_dir / rel)
     try:
-        target.resolve(strict=False).relative_to(game_dir.resolve(strict=False))
+        # rozwiazujemy RODZICA, nie sam wpis: dowiazanie symboliczne (zasoby
+        # modow) wskazuje poza katalog gry, a mimo to jest naszym plikiem
+        (target.parent.resolve(strict=False) / target.name).relative_to(
+            game_dir.resolve(strict=False))
     except ValueError:
         return None
     return target
@@ -184,6 +196,8 @@ def _safe_rel(game_dir: Path, rel: str) -> Path | None:
 def _prune_empty_parents(game_dir: Path, path: Path) -> None:
     parent = path.parent
     while parent != game_dir and game_dir in parent.parents:
+        if parent == game_dir / "Mods":
+            return  # katalog Mods nalezy do gry, nie do nas
         try:
             parent.rmdir()
         except OSError:
@@ -221,6 +235,34 @@ def remove_deployed(game_dir: Path) -> int:
     return removed
 
 
+def _link_game_relative_mod_dirs(game_dir: Path, mods_dir: Path) -> list[str]:
+    """Dowiazuje <gra>/Mods/<mod>/Resources -> <instancja>/Mods/<mod>/Resources.
+    Zwraca sciezki wzgledne (do manifestu, zeby sprzatanie je usunelo)."""
+    created: list[str] = []
+    try:
+        mods = sorted(p for p in mods_dir.iterdir() if p.is_dir())
+    except OSError:
+        return created
+    for mod in mods:
+        for wanted in _GAME_RELATIVE_MOD_DIRS:
+            res = _child(mod, wanted)
+            if res is None or not res.is_dir():
+                continue
+            link = game_dir / "Mods" / mod.name / res.name
+            if link.is_symlink():
+                link.unlink()
+            elif link.exists():
+                continue  # prawdziwy folder (reczna instalacja) zostaje nietkniety
+            try:
+                link.parent.mkdir(parents=True, exist_ok=True)
+                os.symlink(res.resolve(strict=False), link, target_is_directory=True)
+            except OSError:
+                logger.warning("Could not link mod resources into the game dir: %s", link, exc_info=True)
+                continue
+            created.append(link.relative_to(game_dir).as_posix())
+    return created
+
+
 def sync_game_dir(game_dir: Path | str, instance_data_dir: Path | str | None) -> bool:
     """Doprowadza katalog gry do stanu właściwego dla uruchamianej instancji.
 
@@ -250,6 +292,8 @@ def sync_game_dir(game_dir: Path | str, instance_data_dir: Path | str | None) ->
                 target.unlink()
         shutil.copy2(src, target, follow_symlinks=False)
         deployed.append(rel.as_posix())
+
+    deployed.extend(_link_game_relative_mod_dirs(game_dir, mods_dir))
 
     ini = game_dir / "doorstop_config.ini"
     if ini.is_file():
