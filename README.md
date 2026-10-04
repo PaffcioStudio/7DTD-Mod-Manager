@@ -35,7 +35,7 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 
 **Author:** PaffcioStudio
 **Platform:** Linux
-**Current version:** 1.0.42  
+**Current version:** 1.0.43  
 **UI languages:** English and Polish
 **Default language:** English on a new installation; Polish can be selected in Settings.
 
