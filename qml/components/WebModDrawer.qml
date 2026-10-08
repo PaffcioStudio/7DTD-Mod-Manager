@@ -41,6 +41,23 @@ Item {
         var modern = raw.match(/^v(\d+(?:\.\d+)*)$/)
         if (modern)
             return "v" + modern[1]
+        // Etykiety rodzin z katalogu: "V3 Mods", "V2 Mods", "Alpha 21 Mods".
+        // Po usunieciu spacji wygladaja jak "v3mods" - wczesniej wpadaly w
+        // pusty wynik i plik V3 byl blokowany jako niezgodny.
+        var family = raw.match(/^v(\d+(?:\.\d+)*)mods?$/)
+        if (family)
+            return "v" + family[1]
+        var alphaFamily = raw.match(/^(?:alpha|a)(\d+(?:\.\d+)*)mods?$/)
+        if (alphaFamily)
+            return "alpha" + alphaFamily[1]
+        // Branche Steam bez numeru to aktualna linia V3 (public = v3.3.0).
+        if (raw === "public" || raw === "latest" || raw === "latestexperimental"
+                || raw === "latest_experimental")
+            return "v3"
+        // Pelne nazwy typu "v3.3.0-b1" / "v3.2.0 stable": bierzemy numer.
+        var loose = raw.match(/^v(\d+(?:\.\d+)*)(?:[a-z][a-z0-9]*)?$/)
+        if (loose)
+            return "v" + loose[1]
         return ""
     }
 
@@ -84,10 +101,12 @@ Item {
         var detected = file.detectedGameVersions || []
         var selected = drawer.selectedGameVersion
         if (selected !== "")
+            // Plik bez wersji w nazwie (np. "Jan_Overhaul_Food.zip") dziedziczy
+            // wersje zadeklarowane przez moda. Wystarczy, ze ktoras pasuje do
+            // wybranego filtra (mod moze deklarowac kilka rodzin naraz).
             return detected.length > 0
                    ? versionsMatch(selected, detected)
-                   : (declaredModVersionFallback().length === 1 &&
-                      versionsMatch(selected, declaredModVersionFallback()))
+                   : versionsMatch(selected, declaredModVersionFallback())
 
         // Bez wybranego filtra nie wybieramy w ciemno pliku z nieznaną/
         // wielowersyjną kompatybilnością. Bezpieczny wyjątek: mod sam

@@ -44,6 +44,25 @@ _GAME_VERSION_CONTEXT_RE = re.compile(
 )
 
 
+def _canonical_game_version(prefix: str, number: str) -> str:
+    """``alpha``/``a`` -> alphaN. ``vN`` z N >= 10 to Alpha (autorzy piszą
+    "stable-v21" mając na myśli Alpha 21); linia V1-V3 zostaje jako vN."""
+    if prefix.strip().casefold().startswith(("alpha", "a")):
+        return f"alpha{number}"
+    try:
+        major = int(number.split(".")[0])
+    except ValueError:
+        major = 0
+    if 10 <= major <= 21:
+        return f"alpha{number}"
+    return f"v{number}"
+
+
+# "for Game Version 2.6" - numer bez litery V/A po frazie "game version".
+_GAME_VERSION_BARE_RE = re.compile(
+    r"game\s+versions?\s*[:\-]?\s*(\d+(?:\.\d+)*)", re.IGNORECASE)
+
+
 def _normalize_detected_game_version(value: str) -> str:
     """Normalizuje oznaczenie z nazwy pliku do ``vN[.x]`` albo ``alphaN[.x]``."""
     raw = (value or "").strip().casefold()
@@ -53,7 +72,7 @@ def _normalize_detected_game_version(value: str) -> str:
         return f"alpha{match.group(2)}"
     match = re.fullmatch(r"v(\d+(?:\.\d+)*)", raw)
     if match:
-        return f"v{match.group(1)}"
+        return _canonical_game_version("v", match.group(1))
     return ""
 
 
@@ -95,8 +114,7 @@ def _declared_game_version_tokens(
             prefix = match.group(0).strip().casefold()
             number = match.group(1)
             canonical = (
-                f"alpha{number}" if prefix.startswith(("alpha", "a"))
-                else f"v{number}"
+                _canonical_game_version(prefix, number)
             )
             if canonical not in values:
                 values.append(canonical)
@@ -134,12 +152,15 @@ def detect_file_game_versions(
 
     contextual = []
     for match in _GAME_VERSION_CONTEXT_RE.finditer(text):
+        for bare in _GAME_VERSION_BARE_RE.finditer(match.group(0)):
+            canonical = _canonical_game_version("v", bare.group(1))
+            if canonical not in contextual:
+                contextual.append(canonical)
         for token_match in _GAME_VERSION_TOKEN_RE.finditer(match.group(0)):
             prefix = token_match.group(0).strip().casefold()
             number = token_match.group(1) or token_match.group(2)
             canonical = (
-                f"alpha{number}" if prefix.startswith(("alpha", "a"))
-                else f"v{number}"
+                _canonical_game_version(prefix, number)
             )
             if canonical not in contextual:
                 contextual.append(canonical)
@@ -153,8 +174,7 @@ def detect_file_game_versions(
             prefix = token_match.group(0).strip().casefold()
             number = token_match.group(1) or token_match.group(2)
             mod_tokens.add(
-                f"alpha{number}" if prefix.startswith(("alpha", "a"))
-                else f"v{number}"
+                _canonical_game_version(prefix, number)
             )
         # API często przechowuje sam numer wersji moda bez litery V.
         # "6.0.0-DEV" może więc odpowiadać "V6" w etykiecie pliku.
@@ -168,8 +188,7 @@ def detect_file_game_versions(
         prefix = match.group(0).strip().casefold()
         number = match.group(1) or match.group(2)
         canonical = (
-            f"alpha{number}" if prefix.startswith(("alpha", "a"))
-            else f"v{number}"
+            _canonical_game_version(prefix, number)
         )
         if canonical in mod_tokens or (
             canonical.startswith("v")
