@@ -116,6 +116,20 @@ Item {
         return detected.length === 1
     }
 
+    // Wersja gry przekazywana backendowi przy pobieraniu pliku:
+    // 1) wybrany filtr, 2) wersja wykryta w SAMYM pliku (gdy jedna),
+    // 3) dopiero pierwsza wersja zadeklarowana przez moda.
+    // Wczesniej bez filtra zawsze szla pierwsza deklaracja ("V2 Mods"),
+    // wiec plik "for V1" byl traktowany jak V2.
+    function versionForDownload(file) {
+        if (drawer.selectedGameVersion !== "")
+            return drawer.selectedGameVersion
+        var detected = (file && file.detectedGameVersions) || []
+        if (detected.length === 1)
+            return detected[0]
+        return declaredModVersionFallback()[0] || ""
+    }
+
     function selectedVersionLabel() {
         var normalized = normalizedGameVersion(drawer.selectedGameVersion)
         if (!normalized)
@@ -364,8 +378,7 @@ Item {
                                         disabled: fileRow.rowLocked
                                         onClicked: Downloads.startModDownloadWithFileVersion(
                                             drawer.slug, fileRow.modelData.fileRef,
-                                            drawer.selectedGameVersion ||
-                                            (drawer.details.gameVersions || "").split(", ")[0] || "")
+                                            drawer.versionForDownload(fileRow.modelData))
                                     }
                                 }
 
