@@ -69,6 +69,7 @@ class ProfileListModel(QAbstractListModel):
     SkipIntroRole = IdRole + 15
     GameBranchRole = IdRole + 16
     FavoriteRole = IdRole + 17
+    ProtonPathRole = IdRole + 18
 
     ROLES = {
         IdRole: b"profileId",
@@ -89,6 +90,7 @@ class ProfileListModel(QAbstractListModel):
         SkipIntroRole: b"skipIntro",
         GameBranchRole: b"gameBranch",
         FavoriteRole: b"favorite",
+        ProtonPathRole: b"protonPath",
     }
 
     def __init__(self, manager: "ProfileManager", parent=None) -> None:
@@ -130,6 +132,7 @@ class ProfileListModel(QAbstractListModel):
             self.SkipIntroRole: profile.flag_skip_intro,
             self.GameBranchRole: profile.game_branch,
             self.FavoriteRole: profile.favorite,
+            self.ProtonPathRole: profile.proton_path,
         }
         return attr.get(role)
 
@@ -254,6 +257,7 @@ class ProfileManager(QObject):
             color_tag=_COLOR_TAGS[index % len(_COLOR_TAGS)],
             game_branch=instance.game_branch,
             favorite=instance.favorite,
+            proton_path=instance.proton_path,
         )
 
     @staticmethod
@@ -377,9 +381,10 @@ class ProfileManager(QObject):
         self._bus.toastKey("toast.instances.active", {"name": profile.name if profile else profile_id}, "success")
 
     @Slot(str, str, str, bool, bool, bool, bool, str, result=bool)
+    @Slot(str, str, str, bool, bool, bool, bool, str, str, result=bool)
     def createInstance(self, name: str, data_dir: str, description: str,
                        noeos: bool, noeac: bool, skip_news_screen: bool,
-                       skip_intro: bool, game_branch: str = "") -> bool:
+                       skip_intro: bool, game_branch: str = "", proton_path: str = "") -> bool:
         """Pełny slot tworzenia instancji (dialog edycji, Krok C)."""
         if self._game.isRunning:
             self._bus.toastKey("toast.instances.cannotCreateRunning", {}, "warning")
@@ -392,6 +397,7 @@ class ProfileManager(QObject):
                 instances=self._instances,
                 description=description,
                 game_branch=game_branch,
+                proton_path=proton_path,
             )
         except inst.InstanceError as exc:
             self._bus.toastKey("common.operationFailed", {"error": str(exc)}, "error")
@@ -476,6 +482,7 @@ class ProfileManager(QObject):
                 skip_intro=instance.flag_skip_intro,
                 description=instance.description,
                 game_branch=instance.game_branch,
+                proton_path=instance.proton_path,
                 instances=self._instances,
             )
         except inst.InstanceError as exc:
@@ -570,6 +577,7 @@ class ProfileManager(QObject):
             "isRunning": instance.instance_id == self._running_id,
             "colorTag": profile.color_tag if profile else _COLOR_TAGS[0],
             "gameBranch": instance.game_branch,
+            "protonPath": instance.proton_path,
         }
 
     # ------------------------------------------------------------------ #
@@ -805,6 +813,11 @@ class ProfileManager(QObject):
         if self._launch_in_progress:
             self._bus.toastKey("toast.instances.launchInProgress", {}, "info")
             return
+        if instance.proton_path:
+            from backend.protons import resolve_proton
+            if resolve_proton(instance.proton_path)[0] is None:
+                self._bus.toastKey("protons.missingSelection", {"path": instance.proton_path}, "error")
+                return
         if instance.game_branch:
             from backend.game_versions import required_game_branch, version_requirement_text
             from backend.game_versions import resolve_downloaded_branch
@@ -892,10 +905,11 @@ class ProfileManager(QObject):
             self._bus.toastKey("toast.instances.buildSuccessCounts", {"name": name, "linked": linked, "copied": copied}, "success")
 
     @Slot(str, str, str, str, bool, bool, bool, bool, str)
+    @Slot(str, str, str, str, bool, bool, bool, bool, str, str)
     def updateInstance(self, profile_id: str, name: str, data_dir: str,
                        description: str, noeos: bool, noeac: bool,
                        skip_news_screen: bool, skip_intro: bool,
-                       game_branch: str = "") -> None:
+                       game_branch: str = "", proton_path: str = "") -> None:
         """Pełna edycja instancji (dialog edycji, Krok C): nazwa, opis,
         katalog danych i flagi - z walidacją jak przy tworzeniu."""
         if self._game.isRunning:
@@ -921,6 +935,7 @@ class ProfileManager(QObject):
         instance.flag_skip_news_screen = skip_news_screen
         instance.flag_skip_intro = skip_intro
         instance.game_branch = (game_branch or "").strip()[:40]
+        instance.proton_path = (proton_path or "").strip()
         self._save_registry()
         self._model.set_profiles(
             [self._to_profile(i, idx) for idx, i in enumerate(self._instances)], self._active_id)

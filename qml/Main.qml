@@ -60,6 +60,7 @@ ApplicationWindow {
         "dashboard": [I18n.t("dashboard.title"), I18n.t("dashboard.subtitle")],
         "mods": [I18n.t("mods.title"), I18n.format("mods.caption", {shown: Mods.totalMods, total: Mods.totalMods, enabled: Mods.enabledCount})],
         "profiles": [I18n.t("instances.title"), I18n.t("instances.subtitle")],
+        "protons": [I18n.t("nav.protons"), I18n.t("protons.help")],
         "steam_releases": [I18n.t("steamReleases.title"), I18n.t("steamReleases.subtitle")],
         "game_profiles": [I18n.t("gameProfiles.title"), GameProfiles.count > 0 ? I18n.format("gameProfiles.subtitle.count", {count: GameProfiles.count}) : I18n.t("gameProfiles.subtitle.none")],
         "modpacks": [I18n.t("backups.title"), Modpacks.count > 0 ? I18n.format("backups.items", {count: Modpacks.count}) : I18n.t("backups.caption")],
@@ -76,6 +77,7 @@ ApplicationWindow {
         "dashboard": I18n.t("dashboard.title"),
         "mods": I18n.t("mods.title"),
         "profiles": I18n.t("instances.title"),
+        "protons": I18n.t("nav.protons"),
         "steam_releases": I18n.t("steamReleases.title"),
         "game_profiles": I18n.t("gameProfiles.title"),
         "modpacks": I18n.t("backups.title"),
@@ -158,6 +160,7 @@ ApplicationWindow {
                     ModsPage {}
                     ProfilesPage { id: profilesPage; objectName: "profilesPage" }
                     SteamReleasesPage { id: steamReleasesPage; objectName: "steamReleasesPage" }
+                    ProtonsPage { objectName: "protonsPage" }
                     GameProfilesPage {}
                     BackupsPage {}
                     DownloadsPage {}

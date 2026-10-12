@@ -106,6 +106,7 @@ class Instance:
     game_branch: str = ""
     # ulubiona instancja: zawsze pokazywana na górze i chroniona przed usunięciem
     favorite: bool = False
+    proton_path: str = ""  # empty = automatic selection
 
     @property
     def is_default(self) -> bool:
@@ -186,6 +187,7 @@ def _instance_to_dict(instance: Instance) -> dict:
         "created_at": instance.created_at,
         "game_branch": instance.game_branch,
         "favorite": instance.favorite,
+        "proton_path": instance.proton_path,
     }
 
 
@@ -214,6 +216,7 @@ def _instance_from_dict(item: dict) -> Instance:
         description=description,
         game_branch=game_branch,
         favorite=bool(item.get("favorite", False)),
+        proton_path=str(item.get("proton_path", "") or ""),
     )
 
 
@@ -361,6 +364,7 @@ def create_instance(
     skip_intro: bool = True,
     description: str = "",
     game_branch: str = "",
+    proton_path: str = "",
     instances: list[Instance] | None = None,
     from_datetime=None,
 ) -> Instance:
@@ -385,6 +389,7 @@ def create_instance(
         flag_skip_intro=skip_intro,
         description=description,
         game_branch=(game_branch or "").strip()[:40],
+        proton_path=(proton_path or "").strip(),
         created_at=now().isoformat(timespec="seconds"),
     )
 
@@ -469,6 +474,7 @@ def launch_instance_via_steam(instance: Instance) -> bool:
         skip_news_screen=instance.flag_skip_news_screen,
         skip_intro=instance.flag_skip_intro,
         game_branch=instance.game_branch,
+        proton_path=instance.proton_path,
     )
 
 

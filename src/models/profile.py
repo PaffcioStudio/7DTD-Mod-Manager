@@ -33,6 +33,7 @@ class Profile:
     # "" = bez przypisania (globalna instalacja Steam)
     game_branch: str = ""
     favorite: bool = False
+    proton_path: str = ""
 
     # ------------------------------------------------------------------ #
     @property

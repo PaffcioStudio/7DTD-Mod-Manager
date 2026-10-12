@@ -53,6 +53,8 @@ from backend.game_detector import GameDetector  # noqa: E402
 from backend.mod_manager import ModManager
 from backend.file_browser import FileBrowser
 from backend.game_versions import GameVersionsManager
+from backend.protons import ProtonManager
+from backend.instance_logs import InstanceLogs
 from backend.global_search import GlobalSearchManager
 from backend.modpack_manager import ModpackManager  # noqa: E402
 from backend.profile_manager import ProfileManager  # noqa: E402
@@ -122,6 +124,8 @@ class BootOptions(QObject):
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=APP_NAME)
+    parser.add_argument("--language", choices=("en", "pl"), default="",
+                        help="session language override; does not change saved settings")
     parser.add_argument("--page", default="",
                         help="initial page (dashboard/mods/profiles/…)")
     parser.add_argument("--open-drawer", default="",
@@ -175,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
               sys.__excepthook__(et, ev, tb)))
 
     settings = SettingsService()
+    if args.language:
+        settings.set_session_language(args.language)
     setup_logging(settings)
     try:
         from services import tree_check
@@ -210,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         app_info = boot_step("AppInfo", lambda: AppInfo(bus))
         file_browser = boot_step("FileBrowser", FileBrowser)
         game_versions = boot_step("GameVersionsManager", GameVersionsManager)
+        protons = boot_step("ProtonManager", ProtonManager)
+        instance_logs = boot_step("InstanceLogs", InstanceLogs)
         downloads.setGameVersionsManager(game_versions)
         global_search = boot_step("GlobalSearchManager", lambda: GlobalSearchManager(mods, profiles))
     except Exception:
@@ -291,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
     context.setContextProperty("Game", game)
     context.setContextProperty("FileBrowser", file_browser)
     context.setContextProperty("GameVersions", game_versions)
+    context.setContextProperty("Protons", protons)
+    context.setContextProperty("Logs", instance_logs)
     context.setContextProperty("GlobalSearch", global_search)
 
     qml_file = PROJECT_ROOT / "qml" / "Main.qml"
@@ -311,7 +321,18 @@ def main(argv: list[str] | None = None) -> int:
         out_path = Path(args.screenshot).expanduser().resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
+        import time
+        capture_deadline = time.monotonic() + max(40, args.wait / 1000)
+
         def capture(downloads=downloads, game_versions=game_versions, window=window) -> None:
+            if args.page == "protons" and protons.busy:
+                if time.monotonic() < capture_deadline:
+                    QTimer.singleShot(100, capture)
+                    return
+                logger.error("Screenshot failed: Proton catalog did not finish loading")
+                app.exit(2)
+                return
+            protons.shutdown()
             game_versions.shutdown()
             downloads.shutdown()
             image = window.grabWindow()
@@ -322,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         QTimer.singleShot(max(200, args.wait), capture)
 
     code = app.exec()
+    protons.shutdown()
     # GameVersionsManager owns real DepotDownloader child processes and a worker
     # thread. It must be shut down explicitly, otherwise app.quit()/Ctrl+C can
     # leave DepotDownloader alive in the background and locking game files.

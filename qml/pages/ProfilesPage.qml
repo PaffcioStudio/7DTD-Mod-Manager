@@ -26,7 +26,7 @@ PageShell {
     // zamknięciu (doklik/fade-out nie trafia w karty pod spodem) - D24.
     // Deklaratywnie: odblokowana na starcie (bez modali), lock na otwarcie,
     // 600 ms grace po zamknięciu.
-    readonly property bool anyModalOpen: editorModal.opened || deleteInstanceModal.opened
+    readonly property bool anyModalOpen: editorModal.opened || deleteInstanceModal.opened || logsModal.opened
     readonly property bool contentLocked: anyModalOpen || unlockTimer.running
     onAnyModalOpenChanged: if (!anyModalOpen) unlockTimer.restart()
     Timer {
@@ -81,6 +81,8 @@ PageShell {
         editorDesc.text = d.description || ""
         editorDataDir.text = d.dataDir || ""
         editorBranch.value = d.gameBranch || ""
+        Protons.refreshInstalled()
+        editorProton.value = d.protonPath || ""
         noeosCheck.checked = d.noeos === true
         noeacCheck.checked = d.noeac === true
         skipNewsCheck.checked = d.skipNewsScreen === true
@@ -102,6 +104,8 @@ PageShell {
         editorDesc.text = ""
         editorDataDir.text = Profiles.suggestDataDir("")
         editorBranch.value = ""
+        Protons.refreshInstalled()
+        editorProton.value = ""
         noeosCheck.checked = true
         noeacCheck.checked = false
         skipNewsCheck.checked = true
@@ -120,7 +124,7 @@ PageShell {
                                     editorDataDir.text.trim(), editorDesc.text.trim(),
                                     noeosCheck.checked, noeacCheck.checked,
                                     skipNewsCheck.checked, skipIntroCheck.checked,
-                                    editorBranch.value)
+                                    editorBranch.value, editorProton.value)
             editorModal.close()
             return
         }
@@ -129,7 +133,7 @@ PageShell {
         if (Profiles.createInstance(editorName.text.trim(), editorDataDir.text.trim(),
                                     editorDesc.text.trim(), noeosCheck.checked,
                                     noeacCheck.checked, skipNewsCheck.checked,
-                                    skipIntroCheck.checked, editorBranch.value)) {
+                                    skipIntroCheck.checked, editorBranch.value, editorProton.value)) {
             editorModal.close()
         }
     }
@@ -199,10 +203,11 @@ PageShell {
                         required property bool isActive
                         required property string colorTag
                         required property string gameBranch
+                        required property string protonPath
                         required property bool favorite
 
                         width: widthForColumns()
-                        height: 214
+                        height: 236
 
                         ProfileCard {
                             anchors.fill: parent
@@ -219,12 +224,14 @@ PageShell {
                             isActive: profileDelegate.isActive
                             colorTag: profileDelegate.colorTag
                             gameBranch: profileDelegate.gameBranch
+                            protonPath: profileDelegate.protonPath
                             favorite: profileDelegate.favorite
 
                             onFavoriteToggled: Profiles.toggleFavorite(profileDelegate.profileId)
                             onLaunchRequested: Profiles.launchInstance(profileDelegate.profileId)
                             onActivateRequested: Profiles.activate(profileDelegate.profileId)
                             onBuildModsRequested: Profiles.buildModsFor(profileDelegate.profileId)
+                            onLogsRequested: logsModal.showFor(profileDelegate.profileId)
                             onEditRequested: page.openEditor(profileDelegate.profileId)
                             onOpenFolderRequested: Profiles.openDataFolder(profileDelegate.profileId)
                             onDuplicateRequested: Profiles.duplicate(profileDelegate.profileId)
@@ -243,7 +250,7 @@ PageShell {
                 // new instance card
                 Item {
                     width: widthForColumns()
-                    implicitHeight: 214
+                    implicitHeight: 236
 
                     Rectangle {
                         anchors.fill: parent
@@ -474,7 +481,7 @@ PageShell {
                 // ---------------- dane podstawowe --------------------------
                 Rectangle {
                     Layout.fillWidth: true
-                    implicitHeight: 272
+                    implicitHeight: 390
                     radius: Dimensions.radiusMd
                     color: Theme.bg2
                     border.width: 1
@@ -596,6 +603,22 @@ PageShell {
                                 font.family: Theme.fontFamily
                             }
                         }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+                            Text { text: I18n.t("protons.label"); color: Theme.textMuted; font.pixelSize: Typography.caption; font.family: Theme.fontFamily }
+                            DropdownButton {
+                                Layout.fillWidth: true
+                                options: [{value: "", label: I18n.t("protons.automatic")}]
+                                    .concat(Protons.installed.map(p => ({value: p.path, label: p.name})))
+                                    .concat(editorProton.value !== "" && !Protons.installed.some(p => p.path === editorProton.value)
+                                        ? [{value: editorProton.value, label: I18n.t("protons.missing") + " · " + editorProton.value}] : [])
+                                value: editorProton.value
+                                onPicked: value => editorProton.value = value
+                            }
+                            Text { Layout.fillWidth: true; text: I18n.t("protons.selectionHelp"); color: Theme.textMuted; font.pixelSize: Typography.micro; wrapMode: Text.Wrap }
+                        }
+
                     }
                 }
 
@@ -1244,6 +1267,8 @@ PageShell {
     Item { id: noeacCheck; property bool checked: false }
     Item { id: skipNewsCheck; property bool checked: false }
     Item { id: skipIntroCheck; property bool checked: false }
+    InstanceLogsModal { id: logsModal }
+    Item { id: editorProton; property string value: "" }
     Item { id: editorBranch; property string value: "" }
 
     // ---- stop game confirm ------------------------------------------------ #

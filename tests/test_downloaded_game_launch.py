@@ -12,6 +12,12 @@ from backend import game_process
 
 class TestDownloadedGameLaunch(unittest.TestCase):
     def test_launch_builds_proton_command_and_env(self):
+        self._check_launch_command("")
+
+    def test_launch_uses_explicit_proton_and_instance_log_directory(self):
+        self._check_launch_command("/selected/GE-Proton/proton")
+
+    def _check_launch_command(self, selection):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / ".7dtd_modmanager"
             game_dir = root / "game-versions" / "alpha12.5"
@@ -64,16 +70,17 @@ class TestDownloadedGameLaunch(unittest.TestCase):
                 return object()
 
             with patch.object(game_process, "_manager_data_root", return_value=root), \
-                 patch.object(game_process, "find_proton", return_value=(proton, steam_root)), \
+                 patch("backend.protons.resolve_proton", return_value=(proton, steam_root)) as resolver, \
                  patch.object(game_process, "_find_steam_client_root", return_value=steam_client_root), \
                  patch.object(game_process.subprocess, "run", side_effect=fake_run), \
                  patch.object(game_process.subprocess, "Popen", side_effect=fake_popen), \
                  patch.object(game_process, "open", side_effect=fake_open):
                 ok = game_process._launch_downloaded_windows_version(
                     "alpha12.5", str(root / "instance-data"), noeac=True,
-                    skip_intro=True,
+                    skip_intro=True, proton_path=selection,
                 )
 
+            resolver.assert_called_once_with(selection)
             self.assertTrue(ok)
             self.assertFalse((game_mod / "ModInfo.xml").exists())
             self.assertTrue((pack_mod / "ModInfo.xml").exists())
@@ -91,6 +98,8 @@ class TestDownloadedGameLaunch(unittest.TestCase):
             self.assertEqual(env["STEAM_COMPAT_APP_ID"], "251570")
             self.assertEqual(env["SteamAppId"], "251570")
             self.assertEqual(env["SteamGameId"], "251570")
+            self.assertEqual(env["PROTON_LOG"], "1")
+            self.assertEqual(env["PROTON_LOG_DIR"], str(root / "instance-data" / "logs"))
             self.assertEqual(env["WINEPREFIX"], str(root / "compatdata" / "alpha12.5" / "pfx"))
             self.assertEqual(env["STEAM_EXTRA_COMPAT_TOOLS_PATHS"], str(proton.parent))
             self.assertEqual(captured["kwargs"]["cwd"], str(game_dir))

@@ -75,6 +75,7 @@ class SettingsService(QObject):
         super().__init__(parent)
         self._file: Path = fs.settings_path()
         self._values: dict = dict(DEFAULTS)
+        self._session_language = ""
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(250)
@@ -150,9 +151,15 @@ class SettingsService(QObject):
     # ------------------------------------------------------------------ #
     # properties
     # ------------------------------------------------------------------ #
+    def set_session_language(self, value: str) -> None:
+        """Override language for this process without writing settings.json."""
+        if value in ("en", "pl"):
+            self._session_language = value
+            self.languageChanged.emit()
+
     @Property(str, notify=languageChanged)
     def language(self) -> str:
-        return self._get("language")
+        return self._session_language or self._get("language")
 
     @language.setter
     def language(self, value: str) -> None:

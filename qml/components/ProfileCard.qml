@@ -9,6 +9,7 @@ Item {
 
     signal launchRequested()
     signal activateRequested()
+    signal logsRequested()
     signal editRequested()
     signal duplicateRequested()
     signal removeRequested()
@@ -29,9 +30,10 @@ Item {
     property bool isActive: false
     property color colorTag: Theme.accent
     property string gameBranch: ""
+    property string protonPath: ""
     property bool favorite: false
 
-    implicitHeight: 214
+    implicitHeight: 236
 
     // active glow border
     Rectangle {
@@ -215,6 +217,20 @@ Item {
             elide: Text.ElideRight
         }
 
+        Text {
+            Layout.fillWidth: true
+            text: I18n.format("instances.profile.protonVersion", {
+                version: root.protonPath !== ""
+                    ? root.protonPath.split("/").slice(-2, -1)[0]
+                    : I18n.t("protons.automatic")
+            })
+            color: Theme.info
+            font.pixelSize: Typography.caption
+            font.weight: Font.Medium
+            font.family: Theme.fontFamily
+            elide: Text.ElideRight
+        }
+
         Item { Layout.fillHeight: true }
 
         RowLayout {
@@ -263,6 +279,12 @@ Item {
                 compact: true
                 disabled: root.isActive || Game.isRunning || Profiles.launchInProgress
                 onClicked: root.activateRequested()
+            }
+
+            IconButton {
+                icon: "file-text"
+                tooltip: I18n.t("logs.title")
+                onClicked: root.logsRequested()
             }
 
             Item { width: 4 }

@@ -6,7 +6,7 @@ A Linux desktop launcher and mod manager for **7 Days to Die**, built with **Pyt
 
 ## Screenshots
 
-The repository includes English UI screenshots captured from the current application. They are kept in `docs/screenshots/` so the README stays self-contained.
+The repository includes English UI screenshots captured from the current application. They use the current local application state and live services, with no mock data or source-text substitutions. Regenerate them with `.venv/bin/python tests/screenshot_en.py`; capture one page with `.venv/bin/python tests/screenshot_en.py protons`. The script uses English only for the capture sessions and keeps your saved language preference. Images are stored in `docs/screenshots/`.
 
 <table>
 <tr>
@@ -28,6 +28,14 @@ The repository includes English UI screenshots captured from the current applica
 <tr>
 <td align="center"><img src="docs/screenshots/settings-en.png" alt="Settings" width="100%"><br><sub>Settings</sub></td>
 <td align="center"><img src="docs/screenshots/drawer-en.png" alt="Mod details drawer" width="100%"><br><sub>Mod details drawer</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/steam-releases-en.png" alt="Steam releases" width="100%"><br><sub>Steam releases</sub></td>
+<td align="center"><img src="docs/screenshots/protons-en.png" alt="Proton versions" width="100%"><br><sub>Proton versions</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/game-profiles-en.png" alt="Game profiles" width="100%"><br><sub>Game profiles</sub></td>
+<td></td>
 </tr>
 </table>
 
@@ -294,6 +302,18 @@ If `.venv` is missing, run:
 ```bash
 ./venv.sh
 ```
+
+### Select or download Proton
+
+Edit an instance and choose **Proton version**. **Automatic** keeps Steam’s selection for Steam launches and lets the manager choose an installed Proton for downloaded game copies. An explicit selection starts the Windows client directly with that Proton; a missing selected version blocks launch. The selection is preserved when duplicating an instance.
+
+The **Proton** page lists installed Steam/custom compatibility tools and downloads x86_64 GE-Proton releases from [the author’s repository](https://github.com/GloriousEggroll/proton-ge-custom/releases). Downloads are verified with SHA-512 and installed into `~/.7dtd_modmanager/protons/`. Only manager-installed versions can be removed here, and versions assigned to an instance are protected.
+
+### Find instance logs and crash reports
+
+Use the **Logs** button on an instance card to preview text logs, open a file, or open its folder. This includes game logs, launcher logs, Proton debug logs and Unity crash reports inside the Wine prefix. Shared-prefix reports are labelled; compare their timestamp with your launch. Previews show the last 256 KB.
+
+Direct Proton launches enable `PROTON_LOG` and save `steam-251570.log` and `game-launch.log` into `<instance>/logs/`. Steam-managed automatic launches keep Steam’s own logging behavior.
 
 ### A required game branch is missing
 

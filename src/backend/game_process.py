@@ -688,10 +688,19 @@ def find_proton() -> tuple[Path | None, Path | None]:
                 if proton.is_file() and os.access(proton, os.X_OK):
                     candidates.append((proton, root))
 
+    from backend.protons import managed_root
+    managed = managed_root()
+    client = _find_steam_client_root()
+    if managed.is_dir() and client is not None:
+        for child in sorted(managed.iterdir()):
+            proton = child / "proton"
+            if not child.name.startswith(".") and proton.is_file() and os.access(proton, os.X_OK):
+                candidates.append((proton, client))
+
     # Najpierw preferujemy Experimental, następnie Hotfix, potem wersje
     # numerowane. Nazwa katalogu zainstalowanego Protona jest stabilniejsza
     # niż kolejność modyfikacji plików.
-    def rank(item: tuple[Path, Path]) -> tuple[int, int, str]:
+    def rank(item: tuple[Path, Path]) -> tuple:
         name = item[0].parent.name.casefold()
         if "experimental" in name:
             family = 0
@@ -701,11 +710,9 @@ def find_proton() -> tuple[Path | None, Path | None]:
             family = 2
         else:
             family = 3
-        version_num = 0
-        nums = re.findall(r"\d+", name)
-        if nums:
-            version_num = int(nums[-1])
-        return (family, -version_num, name)
+        version_name = re.sub(r"[-_](?:x86_64|aarch64)$", "", name)
+        version = tuple(-int(n) for n in re.findall(r"\d+", version_name))
+        return (family, version, name)
 
     if not candidates:
         return None, None
@@ -769,6 +776,8 @@ def _launch_downloaded_windows_version(
     noeac: bool = False,
     skip_news_screen: bool = False,
     skip_intro: bool = False,
+    proton_path: str = "",
+    game_directory: Path | None = None,
 ) -> bool:
     """Uruchamia pobraną przez DepotDownloader wersję Windows przez Proton.
 
@@ -782,7 +791,7 @@ def _launch_downloaded_windows_version(
         return False
 
     data_root = _manager_data_root()
-    game_dir = data_root / "game-versions" / game_branch
+    game_dir = game_directory or (data_root / "game-versions" / game_branch)
     # Flaga -noeac wybiera zwykły klient. Gdy EAC ma być włączony,
     # korzystamy z launchera EAC, ale tylko wtedy, gdy plik faktycznie istnieje.
     if not noeac and (game_dir / "7DaysToDie_EAC.exe").is_file():
@@ -793,7 +802,8 @@ def _launch_downloaded_windows_version(
         logger.error("Missing executable of downloaded version %s: %s", game_branch, exe)
         return False
 
-    proton, steam_library_root = find_proton()
+    from backend.protons import resolve_proton
+    proton, steam_library_root = resolve_proton(proton_path)
     if proton is None or steam_library_root is None:
         logger.error("No installed Proton found for downloaded version %s", game_branch)
         return False
@@ -821,6 +831,8 @@ def _launch_downloaded_windows_version(
     compat_root.mkdir(parents=True, exist_ok=True)
     _prepare_instance_user_data_compat(user_data_folder, compat_root)
 
+    instance_logs = (Path(user_data_folder).expanduser() if user_data_folder else data_root) / "logs"
+    instance_logs.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.update({
         # To MUSI być instalacja klienta Steam, nie biblioteka na dodatkowym
@@ -832,6 +844,8 @@ def _launch_downloaded_windows_version(
         "STEAM_COMPAT_TOOL_PATHS": str(proton.parent),
         "STEAM_COMPAT_APP_ID": STEAM_APP_ID,
         "WINEPREFIX": str(compat_root / "pfx"),
+        "PROTON_LOG": "1",
+        "PROTON_LOG_DIR": str(instance_logs),
         "SteamAppId": STEAM_APP_ID,
         "SteamGameId": STEAM_APP_ID,
         "SteamOverlayGameId": STEAM_APP_ID,
@@ -861,7 +875,7 @@ def _launch_downloaded_windows_version(
     )
     command = [str(proton), "run", str(exe), *launch_args]
 
-    log_dir = data_root / "logs"
+    log_dir = instance_logs
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "game-launch.log"
 
@@ -941,22 +955,32 @@ def launch_game_via_steam(
     skip_news_screen: bool = False,
     skip_intro: bool = False,
     game_branch: str = "",
+    proton_path: str = "",
 ) -> bool:
     """Uruchamia instancję gry.
 
     Gdy instancja ma `game_branch`, startujemy konkretną kopię pobraną przez
-    DepotDownloader przez Proton. Bez `game_branch` zachowanie pozostaje
-    dotychczasowe: `steam -applaunch 251570 ...` uruchamia instalację Steama.
+    DepotDownloader przez Proton. Wybrany proton_path obowiązuje również
+    dla klienta Windows w bibliotece Steam. Bez obu ustawień używamy
+    `steam -applaunch 251570 ...` i wyboru compatibility tool przez Steam.
     """
     branch = (game_branch or "").strip()
-    if branch:
+    if branch or proton_path:
+        game_directory = None
+        if not branch:
+            game_directory = _steam_game_dir()
+            if game_directory is None:
+                logger.error("Steam game directory not found")
+                return False
         return _launch_downloaded_windows_version(
-            branch,
+            branch or "steam",
             user_data_folder,
             noeos=noeos,
             noeac=noeac,
             skip_news_screen=skip_news_screen,
             skip_intro=skip_intro,
+            proton_path=proton_path,
+            game_directory=game_directory,
         )
 
     steam_bin = _find_steam_binary()
