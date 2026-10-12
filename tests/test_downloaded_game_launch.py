@@ -18,6 +18,11 @@ class TestDownloadedGameLaunch(unittest.TestCase):
             game_dir.mkdir(parents=True)
             (game_dir / "7DaysToDie.exe").write_bytes(b"MZ")
             (game_dir / "steam_appid.txt").write_text("251570", encoding="utf-8")
+            game_mod = game_dir / "Mods" / "0_TFP_Harmony"
+            pack_mod = root / "instance-data" / "Mods" / "pack-harmony"
+            for folder in (game_mod, pack_mod):
+                folder.mkdir(parents=True)
+                (folder / "ModInfo.xml").write_text('<xml><Name value="TFP_Harmony"/></xml>')
 
             proton = Path(td) / "Proton 10" / "proton"
             proton.parent.mkdir(parents=True)
@@ -70,6 +75,8 @@ class TestDownloadedGameLaunch(unittest.TestCase):
                 )
 
             self.assertTrue(ok)
+            self.assertFalse((game_mod / "ModInfo.xml").exists())
+            self.assertTrue((pack_mod / "ModInfo.xml").exists())
             self.assertEqual(captured["command"][0], str(proton))
             self.assertEqual(captured["command"][1], "run")
             self.assertTrue(captured["command"][2].endswith("7DaysToDie.exe"))

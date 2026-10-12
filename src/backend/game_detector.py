@@ -440,6 +440,9 @@ class GameDetector(QObject):
             self._bus.toastKey("toast.game.exeMissing", {}, "error")
             return False
         work_dir = self._settings.gameDirectory or str(Path(exe).parent)
+        if not game_process._prepare_game_mods(Path(work_dir), None):
+            self._bus.toastKey("toast.game.launchFailed", {}, "error")
+            return False
         started = QProcess.startDetached(exe, [], work_dir)
         if started:
             self._bus.toastKey("toast.game.launching", {}, "info")

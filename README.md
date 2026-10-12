@@ -299,6 +299,12 @@ If `.venv` is missing, run:
 
 Open **Steam Releases**, authenticate with Steam when required, and download the branch needed by the instance or mod source.
 
+### Mods bundled with the game also appear in an instance
+
+Before launching a Steam installation or a downloaded game branch, the manager checks for duplicate mods in the game's `Mods` directory and the instance's `Mods` directory. It compares folder names, `Name` from `ModInfo.xml`, and the TFP Harmony wrapper files. The instance's version takes precedence.
+
+The duplicate's descriptor is moved to `<game>/.modmanager-disabled-mods/<mod>/ModInfo.xml`. DLLs and resources remain in their original locations. On the next launch through the manager, a game mod is restored if the selected instance no longer supplies it. Backups survive a manager or game crash. Starting the game outside the manager does not restore these descriptors; launch the default instance through the manager first. If Steam recreates a disabled descriptor or a game mod is symlinked, the manager blocks launch instead of overwriting files or changing the shared source. Details are recorded in the launcher log.
+
 ### Discover shows a package as downloaded even after deleting the instance
 
 The launcher checks actual installed library/instance content instead of trusting a historical `completed` queue entry on its own.

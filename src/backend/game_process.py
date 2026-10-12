@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from backend import bepinex_loader
+from backend import bepinex_loader, mod_dedup
 from backend.wine_paths import to_wine_path
 
 logger = logging.getLogger(__name__)
@@ -811,6 +811,8 @@ def _launch_downloaded_windows_version(
     if steam_bin is None:
         logger.error("Steam client not found - downloaded version %s cannot initialize Steamworks", game_branch)
         return False
+    if not _prepare_game_mods(game_dir, user_data_folder):
+        return False
     _ensure_steam_client_running(steam_bin)
 
     # Osobny prefix na branch: np. ~/.7dtd_modmanager/compatdata/alpha12.5.
@@ -905,6 +907,32 @@ def _launch_downloaded_windows_version(
         return False
 
 
+def _prepare_game_mods(game_dir: Path, user_data_folder: str | Path | None) -> bool:
+    try:
+        if is_game_running():
+            logger.error("Cannot prepare mods while the game is running")
+            return False
+        mod_dedup.sync_game_dir(game_dir, user_data_folder)
+        return True
+    except Exception:
+        logger.exception("Launch blocked: could not reconcile duplicate mods in %s", game_dir)
+        return False
+
+
+def _steam_game_dir() -> Path | None:
+    # Read Steam's installed app manifest, including libraries on other drives.
+    for root in _steam_library_roots():
+        manifest = root / "steamapps" / f"appmanifest_{STEAM_APP_ID}.acf"
+        try:
+            contents = manifest.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = re.search(r'"installdir"\s+"([^"]+)"', contents, re.IGNORECASE)
+        if match:
+            return root / "steamapps" / "common" / match.group(1)
+    return None
+
+
 def launch_game_via_steam(
     user_data_folder: str | Path | None = None,
     *,
@@ -933,6 +961,13 @@ def launch_game_via_steam(
 
     steam_bin = _find_steam_binary()
     if steam_bin is None:
+        return False
+
+    game_dir = _steam_game_dir()
+    if game_dir is None:
+        logger.error("Cannot check duplicate mods: Steam game directory not found")
+        return False
+    if not _prepare_game_mods(game_dir, user_data_folder):
         return False
 
     launch_args = build_launch_args(
