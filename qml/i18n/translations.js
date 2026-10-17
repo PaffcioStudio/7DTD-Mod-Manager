@@ -88,6 +88,8 @@ var pl = {
     "brand.manager": "MENEDŻER MODÓW",
 
     "nav.dashboard": "Pulpit",
+    "nav.gameEnvironment": "Gra i środowisko",
+    "nav.tools": "Narzędzia",
     "nav.instances": "Instancje",
     "nav.steamReleases": "Wydania Steam",
     "nav.gameProfiles": "Profile",
@@ -1108,6 +1110,8 @@ var en = {
     "brand.manager": "MOD MANAGER",
 
     "nav.dashboard": "Dashboard",
+    "nav.gameEnvironment": "Game & Environment",
+    "nav.tools": "Tools",
     "nav.instances": "Instances",
     "nav.steamReleases": "Steam Releases",
     "nav.gameProfiles": "Profiles",

@@ -440,8 +440,8 @@ ApplicationWindow {
         }
     }
 
-    // skróty wg pozycji w sidebarze: Pulpit | Instancje | Profile | Odkrywaj |
-    // Mody | Kopie | Aktualizacje | Pobieranie; Ustawienia na końcu.
+    // Existing Ctrl+1..9 bindings stay unchanged for backwards compatibility;
+    // navigation to a grouped page automatically expands its sidebar section.
     Shortcut { sequence: "Ctrl+1"; onActivated: Bus.goTo("dashboard") }
     Shortcut { sequence: "Ctrl+2"; onActivated: Bus.goTo("profiles") }
     Shortcut { sequence: "Ctrl+3"; onActivated: Bus.goTo("game_profiles") }

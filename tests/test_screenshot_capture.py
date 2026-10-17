@@ -22,6 +22,46 @@ def test_capture_targets_include_new_pages_and_backups_alias():
         capture.selected_targets(['does-not-exist'])
 
 
+def test_sidebar_targets_have_independent_names_and_modes():
+    sidebar_names = list(capture.SIDEBAR_MODES)
+    assert sidebar_names == ['sidebar-default-en.png', 'sidebar-game-en.png', 'sidebar-tools-en.png']
+    assert len(capture.selected_targets([])) == 16
+    assert capture.selected_targets(['dashboard']) == [('dashboard-en.png', 'dashboard', 1800)]
+    for name in sidebar_names:
+        assert capture.selected_targets([name]) == [
+            (name, 'dashboard', 1800)
+        ]
+        assert capture.selected_targets([name.removesuffix('-en.png')]) == [
+            (name, 'dashboard', 1800)
+        ]
+    assert capture.selected_targets(['protons', 'sidebar-tools']) == [
+        ('protons-en.png', 'protons', 2500),
+        ('sidebar-tools-en.png', 'dashboard', 1800),
+    ]
+
+
+def test_screenshot_capture_never_writes_settings_json():
+    with patch.object(SettingsService, '_load'):
+        settings = SettingsService(persist=False)
+    settings._values['sidebarGameExpanded'] = True
+    settings._values['sidebarToolsExpanded'] = True
+    with patch.object(settings_service.fs, 'write_json') as write:
+        settings._save()
+    write.assert_not_called()
+    assert settings._values['sidebarGameExpanded']
+    assert settings._values['sidebarToolsExpanded']
+
+
+def test_screenshot_driver_passes_sidebar_preview_to_the_main_app():
+    source = (ROOT / 'src/main.py').read_text()
+    qml = (ROOT / 'qml/components/AppSidebar.qml').read_text()
+    assert 'settings = SettingsService(persist=not bool(args.screenshot))' in source
+    assert 'def sidebarPreview(self)' in source
+    assert 'if (screenshotPreview)' in qml
+    assert 'sidebar.previewGameExpanded' in qml
+    assert 'sidebar.previewToolsExpanded' in qml
+
+
 def test_session_language_does_not_leak_into_saved_settings():
     # The override must remain transient even when another setting is saved.
     with patch.object(SettingsService, '_load'):

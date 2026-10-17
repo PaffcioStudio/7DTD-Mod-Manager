@@ -6,7 +6,7 @@ A Linux desktop launcher and mod manager for **7 Days to Die**, built with **Pyt
 
 ## Screenshots
 
-The repository includes English UI screenshots captured from the current application. They use the current local application state and live services, with no mock data or source-text substitutions. Regenerate them with `.venv/bin/python tests/screenshot_en.py`; capture one page with `.venv/bin/python tests/screenshot_en.py protons`. The script uses English only for the capture sessions and keeps your saved language preference. Images are stored in `docs/screenshots/`.
+The repository includes English UI screenshots captured from the current application. They use the current local application state and live services, with no mock data or source-text substitutions. Regenerate them with `.venv/bin/python tests/screenshot_en.py`; capture one page with `.venv/bin/python tests/screenshot_en.py protons`. The script uses English only for the capture sessions, opens sidebar groups deterministically, and never saves changes to your preferences (including which groups are expanded). It also captures three sidebar layouts: `sidebar-default-en.png`, `sidebar-game-en.png`, and `sidebar-tools-en.png`. Use `.venv/bin/python tests/screenshot_en.py sidebar-game` to capture just one of them. Images are stored in `docs/screenshots/`.
 
 <table>
 <tr>
@@ -38,6 +38,8 @@ The repository includes English UI screenshots captured from the current applica
 <td></td>
 </tr>
 </table>
+
+After regenerating the screenshots, the three additional sidebar images are available in `docs/screenshots/` alongside the existing page captures.
 
 The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clearer `backups-en.png` filename is used above for the Backups screen.
 
@@ -115,6 +117,10 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 - Display sizes in readable `KB/MB/GB` units.
 - Clamp progress and ETA values to safe ranges.
 - Keep download byte counters separate from archive extraction/file-count progress.
+
+### Navigation
+
+The sidebar keeps **Dashboard**, **Instances**, **Mods**, **Discover**, and **Downloads** visible at all times. **Game & Environment** contains **Steam Releases** and **Proton**; **Tools** contains **Profiles**, **Backups**, and **Updates**. Both groups can be expanded independently and remember their state across launches. Navigating to a grouped page from elsewhere in the app automatically opens the matching group. Settings and the version indicator remain at the bottom of the sidebar, even when the navigation list needs to scroll.
 
 ### Global search
 

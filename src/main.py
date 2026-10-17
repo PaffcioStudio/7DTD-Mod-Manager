@@ -93,10 +93,17 @@ class BootOptions(QObject):
         self._width = int(args.width)
         self._height = int(args.height)
         self._toast_demo = bool(args.toast_demo)
+        # Empty for normal launches; a capture can supply a non-persistent
+        # sidebar layout for deterministic English screenshots.
+        self._sidebar_preview = args.sidebar_preview if args.screenshot else ""
 
     @Property(str, constant=True)
     def page(self) -> str:
         return self._page
+
+    @Property(str, constant=True)
+    def sidebarPreview(self) -> str:
+        return self._sidebar_preview
 
     @Property(str, constant=True)
     def drawerMod(self) -> str:
@@ -139,9 +146,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="ms to wait before screenshot")
     parser.add_argument("--screenshot", default="",
                         help="capture the window to this PNG and exit")
+    parser.add_argument("--sidebar-preview", choices=("default", "game", "tools"), default="",
+                        help="screenshot-only sidebar layout; never changes saved navigation preferences")
     parser.add_argument("--width", type=int, default=0, help="window width")
     parser.add_argument("--height", type=int, default=0, help="window height")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.sidebar_preview and not args.screenshot:
+        parser.error("--sidebar-preview requires --screenshot")
+    return args
 
 
 def setup_logging(settings: SettingsService) -> None:
@@ -179,7 +191,9 @@ def main(argv: list[str] | None = None) -> int:
         else (logger.critical("Unhandled exception", exc_info=(et, ev, tb)),
               sys.__excepthook__(et, ev, tb)))
 
-    settings = SettingsService()
+    # Screenshots may trigger navigation, geometry or other setting changes.
+    # Keep the entire capture session read-only with regard to settings.json.
+    settings = SettingsService(persist=not bool(args.screenshot))
     if args.language:
         settings.set_session_language(args.language)
     setup_logging(settings)

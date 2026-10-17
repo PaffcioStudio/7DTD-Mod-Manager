@@ -2,7 +2,8 @@
 """Capture the real English GUI using current local data and live services.
 
 No source rewrites, mock entries or permanent changes to language settings.
-Usage: .venv/bin/python tests/screenshot_en.py [protons profiles ...]
+Usage: .venv/bin/python tests/screenshot_en.py [protons sidebar-game ...]
+All screenshots use an isolated navigation layout and never write settings.json.
 """
 from __future__ import annotations
 
@@ -30,7 +31,17 @@ TARGETS = (
     ('settings-en.png', 'settings', 1800),
     ('discover-en.png', 'discover', 5000),
     ('backups-en.png', 'modpacks', 1800),
+    # The same real Dashboard with three controlled sidebar states.
+    ('sidebar-default-en.png', 'dashboard', 1800),
+    ('sidebar-game-en.png', 'dashboard', 1800),
+    ('sidebar-tools-en.png', 'dashboard', 1800),
 )
+
+SIDEBAR_MODES = {
+    'sidebar-default-en.png': 'default',
+    'sidebar-game-en.png': 'game',
+    'sidebar-tools-en.png': 'tools',
+}
 
 
 def app_python() -> str:
@@ -53,11 +64,15 @@ def selected_targets(names):
     wanted = {name.removesuffix('-en.png').removesuffix('.png').replace('-', '_') for name in names}
     if 'modpacks' in wanted:
         wanted.add('backups')
-    known = {filename.removesuffix('-en.png').replace('-', '_') for filename, _, _ in TARGETS} | {page for _, page, _ in TARGETS}
+    known = {filename.removesuffix('-en.png').replace('-', '_') for filename, _, _ in TARGETS} | {
+        page for filename, page, _ in TARGETS if filename not in SIDEBAR_MODES
+    }
     unknown = wanted - known
     if unknown:
         raise ValueError('Unknown screenshot targets: ' + ', '.join(sorted(unknown)))
-    return [target for target in TARGETS if not wanted or target[0].removesuffix('-en.png').replace('-', '_') in wanted or target[1] in wanted]
+    return [target for target in TARGETS if not wanted
+            or target[0].removesuffix('-en.png').replace('-', '_') in wanted
+            or (target[0] not in SIDEBAR_MODES and target[1] in wanted)]
 
 
 def main() -> None:
@@ -79,7 +94,8 @@ def main() -> None:
         destination = out_dir / filename
         command = [app_python(), str(ROOT / 'src' / 'main.py'), '--language', 'en',
                    '--page', page, '--width', '1400', '--height', '880',
-                   '--wait', str(wait), '--screenshot', str(destination)]
+                   '--wait', str(wait), '--screenshot', str(destination),
+                   '--sidebar-preview', SIDEBAR_MODES.get(filename, 'default')]
         if filename == 'drawer-en.png':
             command.extend(['--open-drawer', mod_id])
         print(f'[{filename}] Capturing current GUI: {page}', flush=True)

@@ -35,6 +35,8 @@ DEFAULTS = {
     "heroRotationEnabled": True,  # okresowe losowanie tła Pulpitu
     "customWindowFrame": True,
     "browserShowHidden": False,      # przeglądarka folderów: pokazuj ukryte
+    "sidebarGameExpanded": False,   # sidebar: Steam branches / Proton
+    "sidebarToolsExpanded": False,  # sidebar: Profiles / Backups / Updates
     "loggingEnabled": False,
     "debugMode": False,
 }
@@ -70,11 +72,14 @@ class SettingsService(QObject):
     heroRotationEnabledChanged = Signal()
     customWindowFrameChanged = Signal()
     browserShowHiddenChanged = Signal()
+    sidebarGroupsChanged = Signal()
     loggingEnabledChanged = Signal()
     debugModeChanged = Signal()
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, persist: bool = True) -> None:
         super().__init__(parent)
+        # Screenshot captures read the user's settings, but do not write them.
+        self._persist = bool(persist)
         self._file: Path = fs.settings_path()
         self._values: dict = dict(DEFAULTS)
         self._session_language = ""
@@ -137,7 +142,8 @@ class SettingsService(QObject):
                         self._save_timer.start()
 
     def _save(self) -> None:
-        fs.write_json(self._file, self._values)
+        if self._persist:
+            fs.write_json(self._file, self._values)
 
     def _get(self, key: str):
         return self._values.get(key, DEFAULTS.get(key))
@@ -274,6 +280,22 @@ class SettingsService(QObject):
     @browserShowHidden.setter
     def browserShowHidden(self, value: bool) -> None:
         self._set("browserShowHidden", bool(value), self.browserShowHiddenChanged)
+
+    @Property(bool, notify=sidebarGroupsChanged)
+    def sidebarGameExpanded(self) -> bool:
+        return bool(self._get("sidebarGameExpanded"))
+
+    @sidebarGameExpanded.setter
+    def sidebarGameExpanded(self, value: bool) -> None:
+        self._set("sidebarGameExpanded", bool(value), self.sidebarGroupsChanged)
+
+    @Property(bool, notify=sidebarGroupsChanged)
+    def sidebarToolsExpanded(self) -> bool:
+        return bool(self._get("sidebarToolsExpanded"))
+
+    @sidebarToolsExpanded.setter
+    def sidebarToolsExpanded(self, value: bool) -> None:
+        self._set("sidebarToolsExpanded", bool(value), self.sidebarGroupsChanged)
 
     @Property(str, notify=discoverDefaultsChanged)
     def discoverDefaultCategory(self) -> str:
