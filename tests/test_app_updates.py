@@ -73,3 +73,28 @@ def test_app_update_check_is_enabled_by_default_and_wired_to_ui():
     assert "onUpdateAvailable" in main and "AppUpdateModal" in main
     modal = (ROOT / "qml/components/AppUpdateModal.qml").read_text(encoding="utf-8")
     assert "App.openUrl(root.url)" in modal and "root.close()" in modal
+
+
+def test_notes_since_understands_labeled_release_headings():
+    body = (
+        "How to report problems\n\n"
+        "## (latest) 1.0.45\n- Prefab downloads fixed\n\n"
+        "## (old) 1.0.44\n- Old update\n\n"
+        "## (old) 1.0.43\n- Older update\n"
+    )
+    notes = au.notes_since(body, "1.0.44")
+    assert "Prefab downloads fixed" in notes
+    assert "Old update" not in notes
+    assert "Older update" not in notes
+    assert "How to report problems" not in notes
+    assert au.notes_since(body, "1.0.45").startswith("## (latest) 1.0.45")
+
+def test_project_release_notes_and_app_version_are_consistent():
+    release_notes = (ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
+    from services.app_info import APP_VERSION
+    assert APP_VERSION == "1.0.45"
+    assert release_notes.count("## (latest) ") == 1
+    assert release_notes.splitlines()[2] == "## (latest) 1.0.45"
+    assert "## (old) 1.0.44" in release_notes
+    assert "## 1.0.46" not in release_notes
+    assert (ROOT / "README.md").read_text(encoding="utf-8").count("**Current version:** 1.0.45") == 1

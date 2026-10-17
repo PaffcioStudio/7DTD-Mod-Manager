@@ -53,7 +53,7 @@ Item {
             return "alpha" + alphaFamily[1]
         // Branche Steam bez numeru to aktualna linia V3 (public = v3.3.0).
         if (raw === "public" || raw === "latest" || raw === "latestexperimental"
-                || raw === "latest_experimental")
+                || raw === "latestexperimentalfallback")
             return "v3"
         // Pelne nazwy typu "v3.3.0-b1" / "v3.2.0 stable": bierzemy numer.
         var loose = raw.match(/^v(\d+(?:\.\d+)*)(?:[a-z][a-z0-9]*)?$/)

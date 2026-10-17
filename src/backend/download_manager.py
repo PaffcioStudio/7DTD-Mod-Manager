@@ -43,6 +43,7 @@ from backend import mock_data
 from backend import modpack_downloader
 from backend import undead_legacy
 from backend import bepinex_loader
+from backend.prefab_archives import prepare_loose_prefab_mod
 from backend.modinfo import find_modinfo
 from backend.scraper_client import (
     SevenDaysModsClient,
@@ -1515,6 +1516,14 @@ class DownloadManager(QObject):
                                     link, selected_game_version, info)
                             ]
                             if not compatible_external:
+                                logger.warning(
+                                    "No compatible mod file: slug=%s selected=%s "
+                                    "declared=%s hosted=%s external=%s",
+                                    info.slug, selected_game_version,
+                                    info.game_versions,
+                                    [(f.id, f.label, f.filename) for f in info.files],
+                                    [(link.id, link.label) for link in info.external_links],
+                                )
                                 raise modpack_downloader.DownloadError(
                                     i18n_message("download.mod.noCompatibleFile", {
                                         "version": selected_game_version
@@ -1696,8 +1705,23 @@ class DownloadManager(QObject):
                 )
                 mods_root = modpack_downloader.find_mods_root_in_extracted(temp_dir)
                 if mods_root is None or not modpack_downloader.mods_root_has_valid_mods(mods_root):
+                    # Some uploads are standalone POI/prefab exports (XML + TTS),
+                    # rather than broken archives. Prepare a regular modlet so
+                    # library activation works without patching game files.
+                    mods_root = prepare_loose_prefab_mod(
+                        temp_dir, slug=info.slug, title=info.title,
+                        author=info.author or "", version=info.current_version or "",
+                    )
+                if mods_root is None or not modpack_downloader.mods_root_has_valid_mods(mods_root):
+                    logger.warning(
+                        "ZIP extracted but contains no supported mod/POI: slug=%s "
+                        "archive=%s entries=%s",
+                        info.slug, dest.name,
+                        [p.relative_to(temp_dir).as_posix()
+                         for p in list(temp_dir.rglob("*"))[:20]],
+                    )
                     raise modpack_downloader.DownloadError(
-                        i18n_message("download.mod.invalidArchive"))
+                        i18n_message("download.mod.unsupportedContents"))
 
                 # foldery modów w archiwum (potrzebne dla obu ścieżek)
                 mod_folders = [

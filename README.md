@@ -43,7 +43,7 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 
 **Author:** PaffcioStudio
 **Platform:** Linux
-**Current version:** 1.0.44  
+**Current version:** 1.0.45  
 **UI languages:** English and Polish
 **Default language:** English on a new installation; Polish can be selected in Settings.
 
@@ -52,6 +52,7 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 ### Mod library
 
 - Centralized local mod library with metadata, versions, source information, target game version, update state, and conflict information.
+- Standalone POI prefab downloads (XML + TTS without `ModInfo.xml`) are prepared as standard modlets and stored in the library, without changing the game's original prefab files.
 - Enable or disable mods without duplicating the whole library for each instance.
 - Import mods from folders and rescan the configured Mods directory.
 - Open mod folders, check for updates, update, search online, and uninstall mods.

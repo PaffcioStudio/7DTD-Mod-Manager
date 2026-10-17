@@ -31,7 +31,7 @@ RELEASE_PAGE = f"https://github.com/{REPO}/releases/tag/release"
 _MAX_NOTES = 6000
 
 _VERSION_RE = re.compile(r"(\d+(?:\.\d+)*)")
-_SECTION_RE = re.compile(r"^##\s+v?(\d+(?:\.\d+)*)\s*$", re.M)
+_SECTION_RE = re.compile(r"^##\s+(?:\(\s*(?:latest|old)\s*\)\s+)?v?(\d+(?:\.\d+)*)\s*$", re.M | re.I)
 
 
 def parse_version(text: str) -> tuple[int, ...] | None:

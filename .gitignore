@@ -50,3 +50,5 @@ git-push.sh
 git-release.sh
 git-setup.sh
 RELEASE_NOTES.md
+.mygit-ops/
+TODO.md

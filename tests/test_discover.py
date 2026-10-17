@@ -268,6 +268,25 @@ class GameVersionFileDetectionTests(unittest.TestCase):
             )
         )
 
+    def test_public_branch_accepts_a_hosted_v3_file_without_version_in_filename(self):
+        from backend.download_manager import DownloadManager
+        from backend.scraper_client import ModFile
+
+        class Info:
+            game_versions = ["V3 Mods"]
+
+        file = ModFile(
+            id="file-1", media_id="", filename="ModRemovalGuard.zip", size=37200,
+            label="Mod Removal Guard", file_type="main", version="1.0.0",
+            scan_status="clean",
+        )
+        self.assertTrue(
+            DownloadManager._file_matches_selected_game_version(file, "public", Info())
+        )
+        self.assertFalse(
+            DownloadManager._file_matches_selected_game_version(file, "v2.6", Info())
+        )
+
     def test_unknown_file_can_use_single_declared_mod_version(self):
         from backend.download_manager import DownloadManager
         from backend.scraper_client import ModFile

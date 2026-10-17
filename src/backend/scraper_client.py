@@ -77,9 +77,28 @@ def _normalize_detected_game_version(value: str) -> str:
 
 
 def _game_version_family(value: str) -> tuple[str, tuple[int, ...]] | None:
-    normalized = _normalize_detected_game_version(value)
-    if not normalized:
-        return None
+    """Interpret Steam branches and catalog labels as the same game family.
+
+    ``public`` is the stable Steam branch of the current V3 line, whereas
+    7daystodiemods.com marks compatible mods as ``V3 Mods``. Neither is a
+    literal ``v3`` token. Previously both values failed the file compatibility
+    check, so a perfectly valid mod was rejected *before* requesting its
+    download URL. Keep aliases limited to known V3 Steam branches; do not
+    guess a branch from an arbitrary name or from a mod's release number.
+    """
+    raw = (value or "").strip().casefold()
+    if raw in {"public", "latest", "latest_experimental",
+               "latest_experimental_fallback"}:
+        normalized = "v3"
+    else:
+        normalized = _normalize_detected_game_version(value)
+        if not normalized:
+            # Site labels such as "V3 Mods", "V2 Mods" or "Alpha 21".
+            # Ambiguous strings remain unknown rather than guessing a match.
+            declared = _declared_game_version_tokens([value])
+            if len(declared) != 1:
+                return None
+            normalized = declared[0]
     kind = "alpha" if normalized.startswith("alpha") else "v"
     number = normalized[len(kind):]
     return kind, tuple(int(part) for part in number.split("."))
@@ -313,9 +332,12 @@ def select_concrete_game_version(
     """
     values: list[str] = []
     for raw in detected_versions or ():
-        normalized = _normalize_detected_game_version(str(raw))
-        if normalized and normalized not in values:
-            values.append(normalized)
+        # This helper also receives page-level labels such as "V3 Mods"
+        # when an artifact has no recognizable version in its own filename.
+        # Unlike the mod's release number, that label is a game version.
+        candidates = _declared_game_version_tokens([str(raw)])
+        if len(candidates) == 1 and candidates[0] not in values:
+            values.append(candidates[0])
 
     if not values:
         return ""
