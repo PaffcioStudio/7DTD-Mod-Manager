@@ -521,6 +521,28 @@ PageShell {
                     caption: I18n.t("settings.updates.sectionCaption")
 
                     SettingsRow {
+                        label: I18n.t("settings.updates.app.checkStart.label")
+                        description: I18n.t("settings.updates.app.checkStart.description")
+                        ToggleSwitch {
+                            checked: Settings.autoCheckAppUpdates
+                            onToggled: (checked) => Settings.autoCheckAppUpdates = checked
+                        }
+                    }
+
+                    SettingsRow {
+                        label: I18n.t("settings.updates.app.checkNow.label")
+                        description: I18n.format("settings.updates.app.checkNow.description", {version: App.version})
+                        SecondaryButton {
+                            text: AppUpdates.busy ? I18n.t("settings.updates.app.checking") : I18n.t("settings.updates.app.checkNow.button")
+                            icon: "refresh-cw"
+                            compact: true
+                            busy: AppUpdates.busy
+                            disabled: AppUpdates.busy
+                            onClicked: AppUpdates.checkNow()
+                        }
+                    }
+
+                    SettingsRow {
                         label: I18n.t("settings.updates.checkStart.label")
                         description: I18n.t("settings.updates.checkStart.description")
                         ToggleSwitch {

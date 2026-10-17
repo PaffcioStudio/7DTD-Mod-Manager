@@ -19,6 +19,7 @@ DEFAULTS = {
     "autoCleanDownloads": "never",   # "never" | "24h" | "7d" (D9)
     "autoCheckUpdates": False,       # etap 11: sprawdzaj przy starcie (opt-in)
     "autoUpdateMods": False,         # etap 11: instaluj aktualizacje sam (opt-in)
+    "autoCheckAppUpdates": True,     # sprawdzaj nowe wydanie programu (GitHub) przy starcie
     "windowWidth": 1400,             # etap 14: geometria okna (bez pozycji -
     "windowHeight": 880,             # przywracanie X/Y potrafi trafić poza ekran)
     "windowMaximized": False,
@@ -59,6 +60,7 @@ class SettingsService(QObject):
     autoCleanDownloadsChanged = Signal()
     autoCheckUpdatesChanged = Signal()
     autoUpdateModsChanged = Signal()
+    autoCheckAppUpdatesChanged = Signal()
     windowGeometryChanged = Signal()
     discoverDefaultsChanged = Signal()
     accentColorChanged = Signal()
@@ -222,6 +224,14 @@ class SettingsService(QObject):
     @autoCheckUpdates.setter
     def autoCheckUpdates(self, value: bool) -> None:
         self._set("autoCheckUpdates", bool(value), self.autoCheckUpdatesChanged)
+
+    @Property(bool, notify=autoCheckAppUpdatesChanged)
+    def autoCheckAppUpdates(self) -> bool:
+        return bool(self._get("autoCheckAppUpdates"))
+
+    @autoCheckAppUpdates.setter
+    def autoCheckAppUpdates(self, value: bool) -> None:
+        self._set("autoCheckAppUpdates", bool(value), self.autoCheckAppUpdatesChanged)
 
     @Property(bool, notify=autoUpdateModsChanged)
     def autoUpdateMods(self) -> bool:
@@ -405,6 +415,7 @@ class SettingsService(QObject):
                        self.modsDirectoryChanged, self.downloadDirectoryChanged,
                        self.maxConcurrentDownloadsChanged, self.autoCleanDownloadsChanged,
                        self.autoCheckUpdatesChanged, self.autoUpdateModsChanged,
+                       self.autoCheckAppUpdatesChanged,
                        self.windowGeometryChanged,
                        self.discoverDefaultsChanged,
                        self.accentColorChanged, self.themeModeChanged,

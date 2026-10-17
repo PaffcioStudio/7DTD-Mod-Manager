@@ -99,6 +99,34 @@ class WebModDetails(QObject):
             _cache.clear()
 
 
+_MAX_GALLERY = 20
+
+
+def _gallery_urls(meta: dict) -> list[str]:
+    """Zrzuty ekranu moda: galeria z serwisu bez duplikatów.
+
+    Gdy serwis nie ma galerii, pokazujemy miniaturę moda (jeśli jest),
+    a w ostateczności obrazki wklejone w opis. Tylko adresy http(s) -
+    reszta (np. data:/file:) nie ma po co trafiać do podglądu.
+    """
+    def clean(values) -> list[str]:
+        out: list[str] = []
+        for value in values or []:
+            if not isinstance(value, str):
+                continue
+            url = value.strip()
+            if url.startswith(("https://", "http://")) and url not in out:
+                out.append(url)
+        return out
+
+    urls = clean(meta.get("gallery"))
+    if not urls:
+        urls = clean([meta.get("thumbnail")])
+    if not urls:
+        urls = clean(meta.get("description_images"))
+    return urls[:_MAX_GALLERY]
+
+
 def _map_details(slug: str, meta: dict) -> dict:
     """get_metadata -> płaski słownik gotowy dla QML (bool/int/str/listy)."""
     files = []
@@ -134,7 +162,7 @@ def _map_details(slug: str, meta: dict) -> dict:
         "downloadCount": int(meta.get("download_count") or 0),
         "url": meta.get("url") or f"https://7daystodiemods.com/mods/{slug}",
         "thumbnail": meta.get("thumbnail") or "",
-        "gallery": [g for g in (meta.get("gallery") or []) if g][:6],
+        "gallery": _gallery_urls(meta),
         "files": files,
         "changelog": [
             {

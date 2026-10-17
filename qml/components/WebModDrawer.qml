@@ -30,6 +30,7 @@ Item {
     }
 
     function close() {
+        viewer.close()
         opened = false
     }
 
@@ -145,7 +146,15 @@ Item {
     visible: scrim.opacity > 0.001
     enabled: opened
 
-    Keys.onEscapePressed: close()
+    // Esc zamyka najpierw pełnoekranowy podgląd zdjęcia, dopiero potem drawer
+    Keys.onEscapePressed: {
+        if (viewer.opened)
+            viewer.close()
+        else
+            close()
+    }
+    Keys.onLeftPressed: if (viewer.opened) viewer.prev()
+    Keys.onRightPressed: if (viewer.opened) viewer.next()
 
     Connections {
         target: WebDetails
@@ -271,6 +280,18 @@ Item {
                         font.pixelSize: Typography.small
                         font.family: Theme.fontFamily
                         wrapMode: Text.WordWrap
+                    }
+
+                    // ---- zrzuty ekranu ----------------------------------------- #
+                    ScreenshotGallery {
+                        id: screenshots
+                        Layout.fillWidth: true
+                        Layout.topMargin: 10
+                        Layout.preferredHeight: Math.min(320, Math.round(drawerBody.width * 9 / 16))
+                        images: drawer.details.gallery !== undefined ? drawer.details.gallery : []
+                        onFullscreenRequested: (index) => viewer.openAt(images, index)
+                        // podgląd na pełnym ekranie i karuzela w drawerze pokazują to samo zdjęcie
+                        onCurrentIndexChanged: if (viewer.opened) viewer.currentIndex = currentIndex
                     }
 
                     // ---- pliki ------------------------------------------------- #
@@ -464,5 +485,13 @@ Item {
                 }
             }
         }
+    }
+
+    // ---- pełnoekranowy podgląd zrzutów ---------------------------------- #
+    ImageViewer {
+        id: viewer
+        onCurrentIndexChanged: if (opened && screenshots.currentIndex !== currentIndex)
+                                   screenshots.currentIndex = currentIndex
+        onClosed: drawer.forceActiveFocus()
     }
 }

@@ -357,6 +357,24 @@ ApplicationWindow {
         ]
     }
 
+    // ---- nowe wydanie programu (GitHub Releases) ------------------------- #
+    AppUpdateModal {
+        id: appUpdateModal
+    }
+
+    Connections {
+        target: AppUpdates
+        function onUpdateAvailable(version, notes, url) {
+            appUpdateModal.show(version, notes, url)
+        }
+        function onUpToDate(version) {
+            toasts.show(I18n.format("toast.appUpdate.upToDate", {version: version}), "success")
+        }
+        function onCheckFailed(error) {
+            toasts.show(I18n.format("toast.appUpdate.failed", {error: error}), "warning")
+        }
+    }
+
     Connections {
         target: Downloads
         function onMultiModFound(itemRef, title, count) {

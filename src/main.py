@@ -53,6 +53,7 @@ from backend.game_detector import GameDetector  # noqa: E402
 from backend.mod_manager import ModManager
 from backend.file_browser import FileBrowser
 from backend.game_versions import GameVersionsManager
+from backend.app_updates import AppUpdates
 from backend.protons import ProtonManager
 from backend.instance_logs import InstanceLogs
 from backend.global_search import GlobalSearchManager
@@ -213,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         downloads = boot_step("DownloadManager", lambda: DownloadManager(mods, bus, settings))
         discover = boot_step("DiscoverManager", DiscoverManager)
         web_details = boot_step("WebModDetails", WebModDetails)
+        app_updates = boot_step("AppUpdates", lambda: AppUpdates(settings))
         app_info = boot_step("AppInfo", lambda: AppInfo(bus))
         file_browser = boot_step("FileBrowser", FileBrowser)
         game_versions = boot_step("GameVersionsManager", GameVersionsManager)
@@ -295,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     context.setContextProperty("Downloads", downloads)
     context.setContextProperty("Discover", discover)
     context.setContextProperty("WebDetails", web_details)
+    context.setContextProperty("AppUpdates", app_updates)
     context.setContextProperty("Conflicts", conflicts)
     context.setContextProperty("Game", game)
     context.setContextProperty("FileBrowser", file_browser)
@@ -313,6 +316,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     window = engine.rootObjects()[0]
+
+    # sprawdzenie nowego wydania programu (jeśli włączone w Ustawieniach);
+    # pomijamy w trybie zrzutu ekranu, żeby nie robić zapytań sieciowych w testach
+    if not args.screenshot:
+        QTimer.singleShot(2500, app_updates.checkOnStartup)
 
     # ------------------------------------------------------------------ #
     # automated screenshot (dev/testing aid)
