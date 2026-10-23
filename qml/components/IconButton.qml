@@ -100,26 +100,32 @@ Item {
         parent: root.tipHost
         opacity: 0
         visible: opacity > 0.01
-        width: tipText.implicitWidth + 18
-        height: 26
+        readonly property real maxWidth: 360
+        readonly property real minWidth: 150
+        width: Math.max(minWidth, Math.min(maxWidth, tipText.implicitWidth + 18))
+        height: Math.max(30, tipText.paintedHeight + 14)
         objectName: "iconButtonTip"
         z: 10000
 
         Rectangle {
             anchors.fill: parent
-            radius: 7
-            color: Theme.bg2
+            radius: 8
+            color: Theme.bg3
             border.width: 1
             border.color: Theme.borderHover
         }
 
         Text {
             id: tipText
-            anchors.centerIn: parent
+            anchors.fill: parent
+            anchors.margins: 7
             text: root.tooltip
             color: Theme.textSecondary
             font.pixelSize: Typography.small
             font.family: Theme.fontFamily
+            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignLeft
         }
 
         Behavior on opacity { NumberAnimation { duration: 160 } }

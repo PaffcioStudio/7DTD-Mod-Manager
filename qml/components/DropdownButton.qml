@@ -30,6 +30,12 @@ Item {
         }
         return ""
     }
+    readonly property string currentIconName: {
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value === value) return options[i].icon || ""
+        }
+        return ""
+    }
 
     implicitHeight: compact ? Dimensions.controlHSm : Dimensions.controlH
     implicitWidth: buttonRow.implicitWidth + (compact ? 24 : 34)
@@ -62,6 +68,15 @@ Item {
             visible: root.caption !== ""
         }
 
+        Icon {
+            name: root.currentIconName
+            size: root.compact ? 14 : 15
+            tint: Theme.textMuted
+            visible: root.currentIconName !== ""
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: visible ? size : 0
+        }
+
         Text {
             text: root.currentLabel
             color: Theme.text
@@ -70,7 +85,7 @@ Item {
             font.family: Theme.fontFamily
             elide: Text.ElideRight
             Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
+            horizontalAlignment: Text.AlignLeft
         }
 
         Icon {
@@ -205,6 +220,15 @@ Item {
                                 }
                                 Item { Layout.preferredWidth: item.selected ? 0 : 15 }
 
+                                Icon {
+                                    name: item.modelData.icon || ""
+                                    size: 15
+                                    tint: item.selected ? Theme.accent : Theme.textMuted
+                                    visible: (item.modelData.icon || "") !== ""
+                                    Layout.preferredWidth: visible ? 15 : 0
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
                                 Text {
                                     text: I18n.resolveMessage(item.modelData.label)
                                     color: rowMouse.containsMouse ? Theme.text : Theme.textSecondary
@@ -213,14 +237,6 @@ Item {
                                     font.family: Theme.fontFamily
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
-                                }
-
-                                Icon {
-                                    name: item.modelData.icon || ""
-                                    size: 15
-                                    tint: Theme.textMuted
-                                    visible: (item.modelData.icon || "") !== ""
-                                    Layout.preferredWidth: visible ? 15 : 0
                                 }
                             }
 

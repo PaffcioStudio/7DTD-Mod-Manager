@@ -1,36 +1,33 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-
-MAIN = (ROOT / "qml" / "Main.qml").read_text(encoding="utf-8")
-
-
-def test_global_header_does_not_receive_page_subtitles():
-    assert 'pageSubtitle: ""' in MAIN
-    assert 'pageMeta[pageStack.currentPage] || I18n.t("dashboard.title")' in MAIN
+MAIN = (ROOT / "qml/Main.qml").read_text(encoding="utf-8")
+HEADER = (ROOT / "qml/components/AppHeader.qml").read_text(encoding="utf-8")
 
 
-def test_page_description_component_wraps_and_limits_copy():
-    comp = (ROOT / "qml" / "components" / "PageDescription.qml").read_text(encoding="utf-8")
-    assert 'wrapMode: Text.WordWrap' in comp
-    assert 'maximumLineCount: 2' in comp
-    assert 'elide: Text.ElideRight' in comp
+def test_global_header_shows_page_descriptions_below_title():
+    assert 'pageTitle: window.pageTitles[pageStack.currentPage]' in MAIN
+    assert 'pageSubtitle: window.pageMeta[pageStack.currentPage]' in MAIN
+    assert 'id: headerSubtitle' in HEADER
+    assert 'text: header.pageSubtitle' in HEADER
+    assert 'ToolTip.text: header.pageSubtitle' in HEADER
+    assert 'elide: Text.ElideRight' in HEADER
+    assert 'maximumLineCount: 1' in HEADER
 
 
-def test_long_page_descriptions_are_inside_pages():
-    for relative, key in (
-        ("qml/pages/DashboardPage.qml", "dashboard.subtitle"),
-        ("qml/pages/ModsPage.qml", "mods.caption"),
-        ("qml/pages/ProfilesPage.qml", "instances.subtitle"),
-        ("qml/pages/SteamReleasesPage.qml", "steamReleases.subtitle"),
-        ("qml/pages/GameProfilesPage.qml", "gameProfiles.subtitle"),
-        ("qml/pages/BackupsPage.qml", "backups.caption"),
-        ("qml/pages/DownloadsPage.qml", "downloads.caption.none"),
-        ("qml/pages/DiscoverPage.qml", "discover.subtitle"),
-        ("qml/pages/UpdatesPage.qml", "updates.pageSubtitle.current"),
-        ("qml/pages/ConflictsPage.qml", "conflicts.subtitle.none"),
-        ("qml/pages/SettingsPage.qml", "settings.subtitle"),
+def test_old_inline_page_descriptions_are_removed():
+    for relative in (
+        "DashboardPage.qml", "ModsPage.qml", "ProfilesPage.qml",
+        "SteamReleasesPage.qml", "GameProfilesPage.qml", "BackupsPage.qml",
+        "DownloadsPage.qml", "DiscoverPage.qml", "UpdatesPage.qml",
+        "ConflictsPage.qml", "SettingsPage.qml", "ProtonsPage.qml",
     ):
-        source = (ROOT / relative).read_text(encoding="utf-8")
-        assert 'PageDescription {' in source, relative
-        assert key in source, (relative, key)
+        source = (ROOT / "qml/pages" / relative).read_text(encoding="utf-8")
+        assert 'PageDescription {' not in source, relative
+
+
+def test_every_page_has_translated_header_subtitle():
+    for page in ('dashboard', 'mods', 'profiles', 'protons', 'steam_releases',
+                 'game_profiles', 'modpacks', 'downloads', 'discover', 'updates',
+                 'conflicts', 'settings'):
+        assert f'"{page}": [' in MAIN

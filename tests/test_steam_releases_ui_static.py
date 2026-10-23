@@ -15,7 +15,7 @@ def test_steam_releases_is_a_first_class_navigation_page():
     assert 'key: "nav.steamReleases"' in SIDEBAR
     assert 'SteamReleasesPage { id: steamReleasesPage' in MAIN
     assert '"steam_releases": I18n.t("steamReleases.title")' in MAIN
-    assert 'pageSubtitle: ""' in MAIN
+    assert 'pageSubtitle: window.pageMeta[pageStack.currentPage]' in MAIN
 
 
 def test_instances_no_longer_owns_steam_release_management():

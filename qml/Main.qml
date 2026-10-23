@@ -9,6 +9,19 @@ import "i18n"
 ApplicationWindow {
     id: window
 
+    function openOnlineSearch(text) {
+        const phrase = String(text || "").trim()
+        if (!phrase)
+            return
+        globalSearchPopup.close()
+        header.closeSearch()
+        GlobalSearch.clear()
+        // Set the intended provider and query before navigating, to avoid
+        // initial Discover loading overwriting the requested search.
+        discoverPage.searchFromHeader(phrase)
+        pageStack.go("discover")
+    }
+
     width: Math.max(Boot.width || Settings.windowWidth || 1400, minimumWidth)
     height: Math.max(Boot.height || Settings.windowHeight || 880, minimumHeight)
     minimumWidth: 1150
@@ -52,10 +65,8 @@ ApplicationWindow {
     Binding { target: I18n; property: "language"; value: Settings.language }
 
     // ---- page catalog ---------------------------------------------------- #
-    // Page metadata keeps the translated title together with legacy subtitle
-    // data for compatibility, while AppHeader intentionally renders only the
-    // title. Descriptions now live inside the individual pages so long text
-    // cannot push header controls out of view.
+    // Page descriptions appear below their titles in AppHeader, not repeated
+    // in each page. Long text is elided, with the full text on hover.
     readonly property var pageMeta: ({
         "dashboard": [I18n.t("dashboard.title"), I18n.t("dashboard.subtitle")],
         "mods": [I18n.t("mods.title"), I18n.format("mods.caption", {shown: Mods.totalMods, total: Mods.totalMods, enabled: Mods.enabledCount})],
@@ -71,8 +82,7 @@ ApplicationWindow {
         "settings": [I18n.t("settings.title"), I18n.t("settings.subtitle")]
     })
 
-    // Titles are kept as a small direct lookup as well as in pageMeta so
-    // the header never needs to render the longer descriptive text.
+    // Page titles remain directly available for places that need a short label.
     readonly property var pageTitles: ({
         "dashboard": I18n.t("dashboard.title"),
         "mods": I18n.t("mods.title"),
@@ -119,9 +129,10 @@ ApplicationWindow {
                 implicitHeight: Dimensions.headerH
 
                 pageTitle: window.pageTitles[pageStack.currentPage] || I18n.t("dashboard.title")
-                // Compatibility lookup shape retained for the catalog audit: pageMeta[pageStack.currentPage] || I18n.t("dashboard.title")
-                // Keep the header compact: page descriptions belong to page content.
-                pageSubtitle: ""
+                // Subtitles live directly under the page title, beside global search.
+                // AppHeader elides lengthy copy and reveals it in a tooltip.
+                pageSubtitle: window.pageMeta[pageStack.currentPage]
+                              ? window.pageMeta[pageStack.currentPage][1] : ""
                 searchVisible: true
                 searchText: GlobalSearch.query
                 gameDetected: Game.isDetected
@@ -132,12 +143,9 @@ ApplicationWindow {
                 dragEnabled: window.frameless
 
                 onSearchEdited: (text) => GlobalSearch.query = text
-                onSearchAccepted: {
-                    if (GlobalSearch.query.trim() !== "") {
-                        pageStack.go("mods")
-                        Mods.searchText = GlobalSearch.query
-                    }
-                }
+                // Enter searches the website, while the popup keeps local and
+                // online matches visible together as the user types.
+                onSearchAccepted: window.openOnlineSearch(GlobalSearch.query)
                 onSettingsRequested: Bus.goTo("settings")
                 onGameStatusRequested: {
                     pageStack.go("settings")
@@ -215,6 +223,8 @@ ApplicationWindow {
                 item.query = Qt.binding(function() { return GlobalSearch.query })
                 item.active = Qt.binding(function() { return globalSearchPopup.opened })
                 item.busy = Qt.binding(function() { return GlobalSearch.busy })
+                item.onlineChecked = Qt.binding(function() { return GlobalSearch.onlineChecked })
+                item.onlineOffline = Qt.binding(function() { return GlobalSearch.onlineOffline })
                 item.error = Qt.binding(function() { return GlobalSearch.error })
                 item.errorKey = Qt.binding(function() { return GlobalSearch.errorKey })
                 item.errorValues = Qt.binding(function() { return GlobalSearch.errorValues })
@@ -230,6 +240,10 @@ ApplicationWindow {
                     pageStack.go("mods")
                     Bus.openMod(itemId)
                 } else if (kind === "discover") {
+                    // Always open an online hit with the web provider, even
+                    // when the Discover page was set to local overhauls.
+                    discoverPage.provider = "web"
+                    discoverPage.version = ""
                     pageStack.go("discover")
                     Qt.callLater(function() { discoverPage.openDetails(itemId) })
                 } else if (kind === "instance") {
@@ -241,6 +255,7 @@ ApplicationWindow {
             onLoaded: {
                 syncItem()
                 item.resultClicked.connect(openSearchResult)
+                item.showOnlineRequested.connect(window.openOnlineSearch)
             }
         }
 

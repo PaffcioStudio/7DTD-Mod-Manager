@@ -29,6 +29,8 @@ class GlobalSearchManager(QObject):
         self._query = ""
         self._results: list[dict] = []
         self._busy = False
+        self._online_checked = False
+        self._online_offline = False
         self._error = ""
         self._errorKey = ""
         self._errorValues: dict = {}
@@ -58,12 +60,16 @@ class GlobalSearchManager(QObject):
             self._pending_query = None
             self._results = []
             self._busy = False
+            self._online_checked = False
+            self._online_offline = False
             self._error = ""
             self._errorKey = ""
             self._errorValues = {}
             self.changed.emit()
             return
         self._results = self._local_results(value)
+        self._online_checked = False
+        self._online_offline = False
         self._error = ""
         self._errorKey = ""
         self._errorValues = {}
@@ -80,6 +86,14 @@ class GlobalSearchManager(QObject):
     @Property(bool, notify=changed)
     def busy(self) -> bool:
         return self._busy
+
+    @Property(bool, notify=changed)
+    def onlineChecked(self) -> bool:
+        return self._online_checked
+
+    @Property(bool, notify=changed)
+    def onlineOffline(self) -> bool:
+        return self._online_offline
 
     @Property(str, notify=changed)
     def error(self) -> str:
@@ -114,7 +128,7 @@ class GlobalSearchManager(QObject):
             if version:
                 subtitle = f"{subtitle} - v{version}" if subtitle else f"v{version}"
             mods.append({
-                "kind": "mod", "sectionKey": "nav.mods",
+                "kind": "mod", "sectionKey": "globalSearch.localMods",
                 "id": str(getattr(mod, "id", "")),
                 "title": str(getattr(mod, "name", "")),
                 "subtitle": subtitle,
@@ -183,16 +197,27 @@ class GlobalSearchManager(QObject):
 
         current_generation = generation == self._generation and self._query != ""
         if not self._closed and current_generation:
+            # Preserve local hits regardless of a catalog/network error. Only
+            # accept the remote response for the exact query generation.
             current = [r for r in self._results if r.get("kind") != "discover"]
             discover_results = []
-            if result is not None:
-                for item in result.get("items", [])[:6]:
+            self._online_checked = True
+            self._online_offline = bool(result.get("offline", False)) if isinstance(result, dict) else False
+            if isinstance(result, dict):
+                seen_slugs = set()
+                for item in result.get("items", [])[:8]:
+                    slug = str(item.get("slug", "")).strip()
+                    if not slug or slug in seen_slugs:
+                        continue
+                    seen_slugs.add(slug)
+                    author = str(item.get("author", "") or "").strip()
+                    versions = str(item.get("versions", "") or "").strip()
                     discover_results.append({
-                        "kind": "discover", "sectionKey": "nav.discover",
-                        "id": str(item.get("slug", "")),
-                        "title": str(item.get("title", "")),
-                        "subtitle": str(item.get("author", "") or ""),
-                        "icon": "compass",
+                        "kind": "discover", "sectionKey": "globalSearch.website",
+                        "id": slug,
+                        "title": str(item.get("title", "") or slug),
+                        "subtitle": " · ".join(part for part in (author, versions) if part),
+                        "icon": "globe",
                     })
             mods = [r for r in current if r.get("kind") == "mod"]
             instances = [r for r in current if r.get("kind") == "instance"]

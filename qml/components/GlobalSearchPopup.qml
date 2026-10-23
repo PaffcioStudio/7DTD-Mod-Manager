@@ -10,11 +10,22 @@ Item {
     property string query: ""
     property bool active: false
     property bool busy: false
+    property bool onlineChecked: false
+    property bool onlineOffline: false
+    readonly property int websiteResultCount: {
+        let count = 0
+        for (let i = 0; i < results.length; i++) {
+            if (results[i].kind === "discover")
+                count++
+        }
+        return count
+    }
     property string error: ""
     property string errorKey: ""
     property var errorValues: ({})
     property var results: []
     signal resultClicked(string kind, string itemId, string title)
+    signal showOnlineRequested(string query)
 
     visible: active && query.trim() !== ""
     implicitWidth: 520
@@ -56,7 +67,7 @@ Item {
                 Item { Layout.fillWidth: true }
                 Text {
                     visible: root.busy
-                    text: I18n.t("globalSearch.discover")
+                    text: I18n.t("globalSearch.searchingWebsite")
                     color: Theme.textMuted
                     font.pixelSize: Typography.caption
                     font.family: Theme.fontFamily
@@ -65,7 +76,7 @@ Item {
 
             Flickable {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(450, resultsColumn.implicitHeight)
+                Layout.preferredHeight: Math.min(400, resultsColumn.implicitHeight)
                 clip: true
                 contentHeight: resultsColumn.implicitHeight
                 boundsBehavior: Flickable.StopAtBounds
@@ -166,7 +177,7 @@ Item {
                     }
 
                     Text {
-                        visible: !root.busy && root.results.length === 0 && root.error === "" && root.errorKey === ""
+                        visible: !root.busy && root.results.length === 0 && root.onlineChecked && root.error === "" && root.errorKey === ""
                         text: I18n.format("globalSearch.noResults", {query: root.query})
                         color: Theme.textMuted
                         font.pixelSize: Typography.small
@@ -174,6 +185,20 @@ Item {
                         Layout.leftMargin: 8
                         Layout.topMargin: 12
                         Layout.bottomMargin: 8
+                    }
+
+                    Text {
+                        visible: root.onlineChecked && !root.busy && root.results.length > 0
+                                 && root.websiteResultCount === 0
+                                 && root.error === "" && root.errorKey === ""
+                        text: I18n.t("globalSearch.noWebsiteResults")
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        Layout.leftMargin: 8
+                        Layout.topMargin: 8
                     }
 
                     Text {
@@ -188,6 +213,41 @@ Item {
                         wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                     }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Theme.border
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 5
+                Layout.rightMargin: 5
+                Layout.preferredHeight: 38
+                spacing: 8
+
+                Icon {
+                    name: root.onlineOffline ? "alert-triangle" : "globe"
+                    size: 14
+                    tint: root.onlineOffline ? Theme.warning : Theme.textMuted
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: root.onlineOffline ? I18n.t("globalSearch.cachedWebsite")
+                          : root.busy ? I18n.t("globalSearch.searchingWebsite")
+                          : I18n.t("globalSearch.websiteSource")
+                    color: Theme.textMuted
+                    font.pixelSize: Typography.caption
+                    font.family: Theme.fontFamily
+                    elide: Text.ElideRight
+                }
+                SecondaryButton {
+                    compact: true
+                    icon: "arrow-right"
+                    text: I18n.t("globalSearch.viewAllWebsite")
+                    onClicked: root.showOnlineRequested(root.query)
                 }
             }
         }

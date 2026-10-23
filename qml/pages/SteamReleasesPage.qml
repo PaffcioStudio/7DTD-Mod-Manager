@@ -77,10 +77,6 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingMd
 
-        PageDescription {
-            text: I18n.t("steamReleases.subtitle")
-            maxTextWidth: 760
-        }
 
         RowLayout {
             Layout.fillWidth: true

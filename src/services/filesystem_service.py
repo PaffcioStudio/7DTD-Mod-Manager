@@ -129,6 +129,11 @@ def activation_state_path() -> Path:
     return data_dir() / "activation.json"
 
 
+def playtime_path() -> Path:
+    """Per-instance playtime snapshots (not part of editable instance settings)."""
+    return data_dir() / "playtime.json"
+
+
 def instances_path() -> Path:
     """Stage 5 of the migration plan (instancje)."""
     return data_dir() / "instances.json"

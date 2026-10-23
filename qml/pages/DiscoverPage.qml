@@ -54,6 +54,21 @@ PageShell {
         webDrawer.openWith(slug, page.version)
     }
 
+    function searchFromHeader(text) {
+        const phrase = String(text || "").trim()
+        if (!phrase)
+            return
+        // Global search must not inherit a saved local-provider, category or
+        // game-version filter that would hide a valid website result.
+        page.provider = "web"
+        page.query = phrase
+        page.category = ""
+        page.version = ""
+        page.createdAfter = ""
+        page.loaded = true
+        page.search(1, false)
+    }
+
     WebModDrawer { id: webDrawer }
     LocalModDrawer { id: localDrawer }
 
@@ -89,10 +104,6 @@ PageShell {
         anchors.margins: Dimensions.pagePad
         spacing: 16
 
-        PageDescription {
-            text: I18n.t("discover.subtitle")
-            maxTextWidth: 760
-        }
 
         RowLayout {
             Layout.fillWidth: true

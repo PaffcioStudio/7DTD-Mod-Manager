@@ -27,12 +27,6 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
 
-        PageDescription {
-            text: Downloads.activeCount > 0
-                  ? I18n.format("downloads.caption", {active: Downloads.activeCount, completed: Downloads.completedCount})
-                  : I18n.t("downloads.caption.none")
-            maxTextWidth: 760
-        }
 
         RowLayout {
             Layout.fillWidth: true

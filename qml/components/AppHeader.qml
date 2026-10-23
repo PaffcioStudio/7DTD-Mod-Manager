@@ -80,26 +80,39 @@ Item {
         anchors.rightMargin: 12
         spacing: 16
 
-        // page title
+        // Compact title + subtitle. Truncation is preferable to continuous
+        // marquees: controls stay accessible and full text has a tooltip.
         ColumnLayout {
             spacing: 1
             Layout.alignment: Qt.AlignVCenter
-            Layout.leftMargin: 0
+            Layout.fillWidth: true
+            Layout.minimumWidth: 140
+            Layout.maximumWidth: Math.max(140, header.width - 560)
 
             Text {
+                Layout.fillWidth: true
                 text: header.pageTitle
                 color: Theme.text
                 font.pixelSize: Typography.h1
                 font.weight: Font.Bold
                 font.family: Theme.fontFamily
+                elide: Text.ElideRight
             }
 
             Text {
+                id: headerSubtitle
+                Layout.fillWidth: true
                 visible: header.pageSubtitle !== ""
                 text: header.pageSubtitle
                 color: Theme.textMuted
                 font.pixelSize: Typography.caption + 0.5
                 font.family: Theme.fontFamily
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                HoverHandler { id: subtitleHover }
+                ToolTip.visible: subtitleHover.hovered && headerSubtitle.truncated
+                ToolTip.text: header.pageSubtitle
+                ToolTip.delay: 550
             }
         }
 

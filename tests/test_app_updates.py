@@ -92,9 +92,9 @@ def test_notes_since_understands_labeled_release_headings():
 def test_project_release_notes_and_app_version_are_consistent():
     release_notes = (ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
     from services.app_info import APP_VERSION
-    assert APP_VERSION == "1.0.45"
+    assert APP_VERSION == "1.0.46"
     assert release_notes.count("## (latest) ") == 1
-    assert release_notes.splitlines()[2] == "## (latest) 1.0.45"
+    assert release_notes.splitlines()[2] == "## (latest) 1.0.46"
     assert "## (old) 1.0.44" in release_notes
     assert "## 1.0.46" not in release_notes
-    assert (ROOT / "README.md").read_text(encoding="utf-8").count("**Current version:** 1.0.45") == 1
+    assert (ROOT / "README.md").read_text(encoding="utf-8").count("**Current version:** 1.0.46") == 1

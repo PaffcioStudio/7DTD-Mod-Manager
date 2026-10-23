@@ -337,6 +337,13 @@ class GameDetector(QObject):
         (stage 6) to tell WHICH instance is running."""
         return [p.user_data_folder or "" for p in self._running]
 
+    @Property("QVariantList", notify=runningChanged)
+    def runningProcesses(self) -> list:
+        """Identity of detected game processes for crash-safe playtime tracking."""
+        return [{"pid": p.pid, "startedAt": p.running_since,
+                 "userDataFolder": p.user_data_folder or ""}
+                for p in self._running]
+
     @Property(bool, notify=runningChanged)
     def runningUsesDefaultData(self) -> bool:
         """True when the game is running WITHOUT -UserDataFolder=, i.e. on

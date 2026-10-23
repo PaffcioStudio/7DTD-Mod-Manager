@@ -32,12 +32,6 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
 
-        PageDescription {
-            text: Mods.updateCount > 0
-                  ? I18n.format("updates.pageSubtitle.withUpdates", {count: Mods.updateCount})
-                  : I18n.t("updates.pageSubtitle.current")
-            maxTextWidth: 760
-        }
 
         RowLayout {
             Layout.fillWidth: true

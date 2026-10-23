@@ -3,7 +3,8 @@ import QtQuick.Layouts
 import "../theme"
 import "../i18n"
 
-// Instance card for the Profiles page (migration stage 6).
+// Three genuinely different presentations of the same instance and actions.
+// Configuration (paths, startup flags and Proton) stays in the editor/tooltip.
 Item {
     id: root
 
@@ -32,247 +33,200 @@ Item {
     property string gameBranch: ""
     property string protonPath: ""
     property bool favorite: false
+    property int totalPlaySeconds: 0
+    property real lastPlayedEpoch: 0
+    property string viewMode: "grid"   // grid, list or spotlight
 
-    implicitHeight: 236
+    readonly property bool isList: viewMode === "list"
+    readonly property bool isSpotlight: viewMode === "spotlight"
+    implicitHeight: isList ? 160 : (isSpotlight ? 260 : 226)
 
-    // active glow border
-    Rectangle {
-        anchors.fill: parent
-        anchors.margins: -1
-        radius: Dimensions.radiusLg + 1
-        color: "transparent"
-        border.width: root.isActive ? 2 : 0
-        border.color: Theme.rgba(root.colorTag, 0.55)
-        visible: root.isActive
+    function durationText(seconds) {
+        const minutes = Math.floor(Math.max(0, seconds) / 60)
+        const hours = Math.floor(minutes / 60)
+        if (hours === 0) return I18n.format("instances.playtime.minutes", {count: minutes})
+        if (minutes % 60 === 0) return I18n.format("instances.playtime.hours", {count: hours})
+        return I18n.format("instances.playtime.hoursMinutes", {hours: hours, minutes: minutes % 60})
+    }
+
+    function lastPlayedText() {
+        if (lastPlayedEpoch <= 0)
+            return I18n.t("instances.playtime.never")
+        const stamp = new Date(lastPlayedEpoch * 1000)
+        if (isNaN(stamp.getTime())) return I18n.t("instances.playtime.never")
+        const locale = Qt.locale(I18n.language === "pl" ? "pl_PL" : "en_US")
+        return I18n.format("instances.playtime.last", {
+            date: stamp.toLocaleDateString(locale, Locale.ShortFormat),
+            time: stamp.toLocaleTimeString(locale, Locale.ShortFormat)
+        })
     }
 
     Rectangle {
-        id: bg
         anchors.fill: parent
         radius: Dimensions.radiusLg
-        color: root.isActive ? Theme.bg3 : Theme.bg2
-        border.width: 1
-        border.color: root.isRunning ? Theme.rgba(Theme.success, 0.55)
-                     : root.isActive ? Theme.rgba(root.colorTag, 0.35)
-                     : (hover.hovered ? Theme.borderHover : Theme.border)
-
-        Behavior on color { ColorAnimation { duration: Theme.fast } }
+        color: root.isSpotlight ? Theme.bg3 : Theme.bg2
+        border.width: root.isActive ? 2 : 1
+        border.color: root.isRunning ? Theme.success
+                      : root.isActive ? Theme.rgba(root.colorTag, 0.65)
+                      : hover.hovered ? Theme.borderHover : Theme.border
         Behavior on border.color { ColorAnimation { duration: Theme.fast } }
     }
 
-    // color ribbon
     Rectangle {
+        width: root.isSpotlight ? 5 : 3
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.margins: 14
-        width: 3
-        radius: 2
+        anchors.margins: 13
+        radius: 3
         color: root.isRunning ? Theme.success : root.colorTag
-        opacity: 0.85
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 32
-        anchors.rightMargin: 18
-        anchors.topMargin: 18
-        anchors.bottomMargin: 14
-        spacing: 5
+        anchors.leftMargin: root.isSpotlight ? 28 : 25
+        anchors.rightMargin: 12
+        anchors.topMargin: root.isList ? 10 : 14
+        anchors.bottomMargin: root.isList ? 8 : 12
+        spacing: root.isSpotlight ? 9 : 5
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
-
+            spacing: 7
             Text {
+                Layout.fillWidth: true
                 text: I18n.resolveMessage(root.name)
                 color: Theme.text
-                font.pixelSize: Typography.h2
+                font.pixelSize: root.isSpotlight ? Typography.h1 : Typography.h2
                 font.weight: Font.DemiBold
                 font.family: Theme.fontFamily
                 elide: Text.ElideRight
-                Layout.fillWidth: true
             }
-
+            Text {
+                visible: root.isRunning || root.isActive
+                text: root.isRunning ? I18n.t("instances.profile.running") : I18n.t("instances.profile.active")
+                color: root.isRunning ? Theme.success : root.colorTag
+                font.pixelSize: Typography.micro
+                font.weight: Font.DemiBold
+                font.family: Theme.fontFamily
+            }
             IconButton {
                 icon: root.favorite ? "star-filled" : "star"
-                tint: root.favorite ? Theme.warning : Theme.textMuted
+                tint: root.favorite ? Theme.warning : Theme.textSecondary
                 hoverTint: root.favorite ? Theme.warning : Theme.text
-                iconSize: 16
-                buttonSize: 30
                 tooltip: root.favorite ? I18n.t("instances.profile.favorite.remove") : I18n.t("instances.profile.favorite.add")
+                buttonSize: 28
+                iconSize: 16
                 onClicked: root.favoriteToggled()
-            }
-
-            // RUNNING pill
-            Rectangle {
-                visible: root.isRunning
-                width: runningRow.implicitWidth + 18
-                height: 22
-                radius: 11
-                color: Theme.rgba(Theme.success, 0.16)
-                border.width: 1
-                border.color: Theme.rgba(Theme.success, 0.45)
-
-                Row {
-                    id: runningRow
-                    anchors.centerIn: parent
-                    spacing: 5
-
-                    Rectangle { width: 6; height: 6; radius: 3; color: Theme.success; anchors.verticalCenter: parent.verticalCenter }
-                    Text {
-                        text: I18n.t("instances.profile.running")
-                        color: Theme.success
-                        font.pixelSize: Typography.micro
-                        font.weight: Font.Bold
-                        font.letterSpacing: Typography.trackingWide
-                        font.family: Theme.fontFamily
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-            }
-
-            // ACTIVE pill
-            Rectangle {
-                visible: root.isActive
-                width: activeRow.implicitWidth + 18
-                height: 22
-                radius: 11
-                color: Theme.rgba(root.colorTag, 0.16)
-                border.width: 1
-                border.color: Theme.rgba(root.colorTag, 0.45)
-
-                Row {
-                    id: activeRow
-                    anchors.centerIn: parent
-                    spacing: 5
-
-                    Rectangle { width: 6; height: 6; radius: 3; color: root.colorTag; anchors.verticalCenter: parent.verticalCenter }
-                    Text {
-                        text: I18n.t("instances.profile.active")
-                        color: root.colorTag
-                        font.pixelSize: Typography.micro
-                        font.weight: Font.Bold
-                        font.letterSpacing: Typography.trackingWide
-                        font.family: Theme.fontFamily
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
             }
         }
 
         Text {
+            visible: !root.isList && text !== ""
             Layout.fillWidth: true
             text: I18n.resolveMessage(root.description)
-            color: Theme.textMuted
+            color: Theme.textSecondary
             font.pixelSize: Typography.small
             font.family: Theme.fontFamily
-            wrapMode: Text.WordWrap
             elide: Text.ElideRight
-            maximumLineCount: 2
+            maximumLineCount: root.isSpotlight ? 2 : 1
+            wrapMode: root.isSpotlight ? Text.WordWrap : Text.NoWrap
         }
 
-        // data dir row
         RowLayout {
             Layout.fillWidth: true
-            spacing: 6
-
-            Icon {
-                name: "folder"
-                size: 12
-                tint: Theme.textSecondary
-                Layout.alignment: Qt.AlignVCenter
-            }
-
+            spacing: 10
             Text {
-                text: I18n.resolveMessage(root.dataDirDisplay)
+                text: I18n.format("instances.profile.modsCount", {enabled: root.enabledCount, total: root.modCount})
                 color: Theme.textSecondary
                 font.pixelSize: Typography.caption
                 font.family: Theme.fontFamily
-                elide: Text.ElideMiddle
+            }
+            Text {
+                visible: root.gameBranch !== ""
                 Layout.fillWidth: true
+                text: I18n.format("instances.profile.gameVersion", {branch: root.gameBranch})
+                color: Theme.info
+                font.pixelSize: Typography.caption
+                font.family: Theme.fontFamily
+                elide: Text.ElideRight
+            }
+            Item { Layout.fillWidth: true }
+            IconButton {
+                icon: "info"
+                buttonSize: 26
+                iconSize: 13
+                tooltip: I18n.format("instances.profile.detailsHint", {
+                    path: I18n.resolveMessage(root.dataDirDisplay),
+                    flags: root.flagsText || "-",
+                    proton: root.protonPath || I18n.t("protons.automatic")
+                })
             }
         }
 
-        // flags row
-        Text {
-            visible: root.flagsText !== ""
+        // Playtime is the primary information on a card; the raw folder and
+        // launch flags no longer consume two entire lines.
+        Rectangle {
             Layout.fillWidth: true
-            text: root.flagsText
-            color: Theme.textMuted
-            font.pixelSize: Typography.caption
-            font.family: Theme.fontFamily
-            elide: Text.ElideRight
-        }
+            implicitHeight: root.isSpotlight ? 67 : (root.isList ? 30 : 48)
+            radius: 9
+            color: Theme.rgba(root.colorTag, root.isSpotlight ? 0.10 : 0.045)
+            border.width: root.isSpotlight ? 1 : 0
+            border.color: Theme.rgba(root.colorTag, 0.2)
 
-        // przypisana wersja gry (pobrana przez DepotDownloader)
-        Text {
-            visible: root.gameBranch !== ""
-            Layout.fillWidth: true
-            text: I18n.format("instances.profile.gameVersion", {branch: root.gameBranch})
-            color: Theme.info
-            font.pixelSize: Typography.caption
-            font.weight: Font.Medium
-            font.family: Theme.fontFamily
-            elide: Text.ElideRight
-        }
-
-        Text {
-            Layout.fillWidth: true
-            text: I18n.format("instances.profile.protonVersion", {
-                version: root.protonPath !== ""
-                    ? root.protonPath.split("/").slice(-2, -1)[0]
-                    : I18n.t("protons.automatic")
-            })
-            color: Theme.info
-            font.pixelSize: Typography.caption
-            font.weight: Font.Medium
-            font.family: Theme.fontFamily
-            elide: Text.ElideRight
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                spacing: 12
+                Icon {
+                    name: "clock"
+                    size: root.isSpotlight ? 19 : 15
+                    tint: root.colorTag
+                }
+                ColumnLayout {
+                    Layout.preferredWidth: root.isSpotlight ? 140 : (root.isList ? 140 : 104)
+                    spacing: 1
+                    Text {
+                        visible: !root.isList
+                        text: I18n.t("instances.playtime.total")
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.micro
+                        font.family: Theme.fontFamily
+                    }
+                    Text {
+                        text: root.durationText(root.totalPlaySeconds)
+                        color: Theme.text
+                        font.pixelSize: root.isSpotlight ? Typography.h2 : Typography.small
+                        font.weight: Font.DemiBold
+                        font.family: Theme.fontFamily
+                    }
+                }
+                Rectangle { width: 1; Layout.fillHeight: true; Layout.topMargin: 7; Layout.bottomMargin: 7; color: Theme.border }
+                Text {
+                    Layout.fillWidth: true
+                    text: root.lastPlayedText()
+                    color: Theme.textSecondary
+                    font.pixelSize: Typography.caption
+                    font.family: Theme.fontFamily
+                    elide: Text.ElideRight
+                }
+            }
         }
 
         Item { Layout.fillHeight: true }
 
         RowLayout {
+            id: actionRow
             Layout.fillWidth: true
-            spacing: 8
-
-            Text {
-                text: I18n.format("instances.profile.modsCount", {enabled: root.enabledCount, total: root.modCount})
-                color: Theme.textSecondary
-                font.pixelSize: Typography.small
-                font.weight: Font.Medium
-                font.family: Theme.fontFamily
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Text {
-                text: I18n.resolveMessage(root.createdText)
-                color: Theme.textMuted
-                font.pixelSize: Typography.caption
-                font.family: Theme.fontFamily
-            }
-        }
-
-        // action row (revealed on hover, or when active/running)
-        Row {
-            id: actions
-            spacing: 8
-            opacity: hover.hovered || root.isActive || root.isRunning ? 1 : 0.35
-            Layout.fillWidth: true
-
-            Behavior on opacity { NumberAnimation { duration: Theme.fast } }
-
+            spacing: root.isList ? 5 : 7
             SecondaryButton {
                 text: I18n.t("instances.profile.launch")
                 icon: "play"
                 compact: true
-                // jedna instancja naraz: gdy gra działa, uruchamianie jest zablokowane
                 enabled: !Game.isRunning && !Profiles.launchInProgress
                 onClicked: root.launchRequested()
             }
-
             SecondaryButton {
                 text: root.isActive ? I18n.t("instances.profile.activeButton") : I18n.t("instances.profile.activate")
                 icon: root.isActive ? "check-circle" : "check"
@@ -280,62 +234,33 @@ Item {
                 disabled: root.isActive || Game.isRunning || Profiles.launchInProgress
                 onClicked: root.activateRequested()
             }
-
+            Item { Layout.fillWidth: true }
+            IconButton { icon: "file-text"; buttonSize: 29; iconSize: 14; tooltip: I18n.t("logs.title"); onClicked: root.logsRequested() }
             IconButton {
-                icon: "file-text"
-                tooltip: I18n.t("logs.title")
-                onClicked: root.logsRequested()
-            }
-
-            Item { width: 4 }
-
-            IconButton {
-                icon: "hammer"
-                tooltip: Game.isRunning
-                         ? I18n.t("instances.profile.buildLocked")
-                         : I18n.t("instances.profile.build")
+                icon: "hammer"; buttonSize: 29; iconSize: 14
+                tooltip: Game.isRunning ? I18n.t("instances.profile.buildLocked") : I18n.t("instances.profile.build")
                 enabled: !Game.isRunning
-                buttonSize: 30
-                iconSize: 14
                 onClicked: root.buildModsRequested()
             }
-
+            IconButton { icon: "folder"; buttonSize: 29; iconSize: 14; visible: !root.isDefault; tooltip: I18n.t("instances.profile.openFolder"); onClicked: root.openFolderRequested() }
             IconButton {
-                icon: "folder"
-                tooltip: I18n.t("instances.profile.openFolder")
-                buttonSize: 30
-                iconSize: 14
-                visible: !root.isDefault
-                onClicked: root.openFolderRequested()
-            }
-
-            IconButton {
-                icon: "edit"
+                icon: "edit"; buttonSize: 29; iconSize: 14
                 tooltip: Game.isRunning ? I18n.t("instances.profile.editLocked") : I18n.t("instances.profile.edit")
                 enabled: !Game.isRunning
-                buttonSize: 30
-                iconSize: 14
                 onClicked: root.editRequested()
             }
-
             IconButton {
-                icon: "copy"
+                icon: "copy"; buttonSize: 29; iconSize: 14
                 tooltip: Game.isRunning ? I18n.t("instances.profile.duplicateLocked") : I18n.t("instances.profile.duplicate")
                 enabled: !Game.isRunning
-                buttonSize: 30
-                iconSize: 14
                 onClicked: root.duplicateRequested()
             }
-
             IconButton {
-                icon: "trash"
+                icon: "trash"; buttonSize: 29; iconSize: 14; danger: true
                 tooltip: Game.isRunning ? I18n.t("instances.profile.removeLocked")
-                        : root.isDefault ? I18n.t("instances.profile.removeDefault")
-                        : root.favorite ? I18n.t("instances.profile.removeFavoriteFirst") : I18n.t("instances.profile.remove")
+                         : root.isDefault ? I18n.t("instances.profile.removeDefault")
+                         : root.favorite ? I18n.t("instances.profile.removeFavoriteFirst") : I18n.t("instances.profile.remove")
                 enabled: !Game.isRunning && !root.isDefault && !root.favorite
-                buttonSize: 30
-                iconSize: 14
-                danger: true
                 visible: !root.isDefault
                 onClicked: root.removeRequested()
             }

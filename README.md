@@ -2,8 +2,6 @@
 
 A Linux desktop launcher and mod manager for **7 Days to Die**, built with **Python, PySide6, and QML**.
 
-🇺🇸 / 🇵🇱 Supports English and Polish languages
-
 7DTD Mod Manager brings game-version control, isolated instances, mod installation, modpacks, overhauls, backups, downloads, updates, conflict detection, profiles, and online mod discovery into one desktop application.
 
 ## Screenshots
@@ -47,7 +45,14 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 
 **Author:** PaffcioStudio
 **Platform:** Linux
-**Current version:** 1.0.45  
+**Current version:** 1.0.46  
+
+### Instance playtime and browsing
+
+The **Instances** page now records playtime from detected game processes, not from clicks on the Launch button. Every instance shows its cumulative playtime and last confirmed play date; instances not yet played show **Never launched**. The total at the top includes all instances still in your library. Statistics are saved in `~/.7dtd_modmanager/playtime.json` and survive launcher restarts, including a game still running when the manager is reopened. If the game is launched outside the manager, playtime is attributed when the process can be matched to an instance; unknown processes are not guessed. Older playtime from before version 1.0.46 cannot be recovered.
+
+Filter by favorite, played, unplayed, recent (seven days), or running instances. Sort by creation date, last played, total playtime, name, or enabled mods; the arrow reverses the order. Choose **Grid**, **List**, or **Spotlight cards** at the top right. Advanced flags, paths, and Proton choices remain in the instance editor or the information tooltip. Page descriptions now sit under the main page title and shorten with a full-text hover tooltip when the header gets crowded.
+
 **UI languages:** English and Polish
 **Default language:** English on a new installation; Polish can be selected in Settings.
 
@@ -68,7 +73,7 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 - Verify that the required branch is actually installed before launch.
 - Modpack and overhaul installations carry their required game version into the created instance.
 - Modpack/overhaul flows automatically use `-noeos` and `-noeac`.
-- Favourite instances stay at the top of the list and are protected from deletion until the favourite flag is removed.
+- Favourite instances stay first in the default creation-date sort and are protected from deletion until the favourite flag is removed. You can also show only favourites with the instance filter.
 - Rename, duplicate, edit, activate, rebuild, open folders, and remove instances from one place.
 
 ### Steam releases and Steam
@@ -126,7 +131,7 @@ The sidebar keeps **Dashboard**, **Instances**, **Mods**, **Discover**, and **Do
 
 ### Global search
 
-The header search can query installed mods, instances, and Discover results. Suggestions are displayed below the search box and close when navigating away, pressing `Esc`, or clicking outside.
+The header search shows instant matches from installed mods and game instances, then adds results from **7daystodiemods.com** in a separate section after a short delay. This internet search is optional and needs a network connection; cached website results are identified when the site is unavailable. Click an online result to see its mod details and downloads in Discover, or press **Enter** / **See all results** to search the full website catalog on the Discover page. The website search ignores saved catalog filters so it does not accidentally hide matching mods. Clicking outside the dropdown, pressing `Esc`, or navigating away closes suggestions. The global search does not automatically download or install mods.
 
 ### Themes and localization
 
@@ -326,7 +331,15 @@ Direct Proton launches enable `PROTON_LOG` and save `steam-251570.log` and `game
 
 ### A required game branch is missing
 
-Open **Steam Releases**, authenticate with Steam when required, and download the branch needed by the instance or mod source.
+Open **Steam Releases**, authenticate with your own Steam account when required, and download the branch needed by the instance or mod source. Steam verifies your entitlement to the game; neither the app nor DepotDownloader can grant access to a branch your account is not authorized to download.
+
+### A particular mod cannot be downloaded
+
+Mods are fetched from their authors' sources, not from your Steam account. A download may be unavailable because the file was removed, its link has expired, the host blocks automated requests (including HTTP 403), the host requires its own login, or no file matches the selected game version. **Steam login will not unlock inaccessible third-party mod files.** Check the available files in the mod details, try a legitimately provided archive from its author and import it manually, or report the failing URL together with the download log.
+
+### Does the launcher check for application updates?
+
+Yes. By default the manager checks GitHub for a newer published release on startup. This can be disabled, and a manual **Check now** action is available under **Settings**. The update dialog shows the relevant release notes and opens the release page if you want to download it. It does not silently replace the installed app. The **About → FAQ** section covers these questions and more in Polish and English.
 
 ### Mods bundled with the game also appear in an instance
 

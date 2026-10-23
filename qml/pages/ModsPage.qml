@@ -80,10 +80,6 @@ PageShell {
 
         // Page title is provided by AppHeader; the description stays in-page.
 
-        PageDescription {
-            text: I18n.format("mods.caption", {shown: Mods.totalMods, total: Mods.totalMods, enabled: Mods.enabledCount})
-            maxTextWidth: 760
-        }
 
         // actions row
         RowLayout {

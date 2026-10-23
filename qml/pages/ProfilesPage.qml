@@ -20,7 +20,28 @@ PageShell {
     property bool settingDir: false
 
     // responsywna siatka: 1 kolumna przy waskim oknie, 2 przy szerokim
-    readonly property int gridColumns: width > 1000 ? 2 : 1
+    property string filterMode: "all"
+    property string sortMode: "created"
+    property bool reverseSort: true
+    property string viewMode: "grid"  // grid, list or spotlight
+    readonly property int gridColumns: viewMode === "list" || viewMode === "spotlight"
+                                       ? 1 : (width > 1000 ? 2 : 1)
+    onFilterModeChanged: syncBrowser()
+    onSortModeChanged: syncBrowser()
+    onReverseSortChanged: syncBrowser()
+    Component.onCompleted: syncBrowser()
+
+    function syncBrowser() {
+        Profiles.setBrowserOptions(filterMode, sortMode, reverseSort)
+    }
+
+    function durationText(seconds) {
+        const minutes = Math.floor(Math.max(0, seconds) / 60)
+        const hours = Math.floor(minutes / 60)
+        if (!hours) return I18n.format("instances.playtime.minutes", {count: minutes})
+        if (minutes % 60 === 0) return I18n.format("instances.playtime.hours", {count: hours})
+        return I18n.format("instances.playtime.hoursMinutes", {hours: hours, minutes: minutes % 60})
+    }
 
     // blokada zawartości strony na czas JAKIEGOKOLWEGO modala + 600 ms po
     // zamknięciu (doklik/fade-out nie trafia w karty pod spodem) - D24.
@@ -145,20 +166,50 @@ PageShell {
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingXl
 
-        PageDescription {
-            text: I18n.t("instances.subtitle")
-            maxTextWidth: 760
-        }
 
         // modale są poza tym layoutem - blokada nie dotyka ich samych
         enabled: !contentLocked
 
         RowLayout {
             Layout.fillWidth: true
+            spacing: 12
+
+            RowLayout {
+                spacing: 10
+
+                Icon { name: "clock"; size: 19; tint: Theme.accent }
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: I18n.t("instances.playtime.libraryTotal")
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                    }
+                    RowLayout {
+                        spacing: 18
+                        Text {
+                            text: page.durationText(Profiles.totalPlaySeconds)
+                            color: Theme.text
+                            font.pixelSize: Typography.h2
+                            font.weight: Font.DemiBold
+                            font.family: Theme.fontFamily
+                        }
+                        Text {
+                            text: I18n.format("instances.playtime.playedCount", {played: Profiles.playedInstancesCount, total: Profiles.count})
+                            color: Theme.textSecondary
+                            font.pixelSize: Typography.caption
+                            font.family: Theme.fontFamily
+                            Layout.alignment: Qt.AlignBottom
+                        }
+                    }
+                }
+            }
 
             Item { Layout.fillWidth: true }
 
             PrimaryButton {
+                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                 text: Game.isRunning ? I18n.t("instances.stopGame.confirm") : I18n.t("instances.newInstance")
                 icon: Game.isRunning ? "x-circle" : "plus"
                 danger: Game.isRunning
@@ -169,6 +220,72 @@ PageShell {
                             I18n.t("instances.stopGame.confirm"), true)
                     else
                         page.openNew()
+                }
+            }
+        }
+
+        // Sort/filter row is next to the new-instance controls, not hidden
+        // in Settings. The ordering does not modify instances.json.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 9
+            DropdownButton {
+                Layout.preferredWidth: 195
+                compact: true
+                value: page.filterMode
+                options: [
+                    {value: "all", label: I18n.t("instances.filter.all"), icon: "layers"},
+                    {value: "favorites", label: I18n.t("instances.filter.favorites"), icon: "star"},
+                    {value: "played", label: I18n.t("instances.filter.played"), icon: "clock"},
+                    {value: "unplayed", label: I18n.t("instances.filter.unplayed"), icon: "minus"},
+                    {value: "recent", label: I18n.t("instances.filter.recent"), icon: "activity"},
+                    {value: "running", label: I18n.t("instances.filter.running"), icon: "play"}
+                ]
+                onPicked: (v) => page.filterMode = v
+            }
+            DropdownButton {
+                Layout.preferredWidth: 184
+                compact: true
+                value: page.sortMode
+                options: [
+                    {value: "created", label: I18n.t("instances.sort.created"), icon: "calendar"},
+                    {value: "last", label: I18n.t("instances.sort.last"), icon: "clock"},
+                    {value: "playtime", label: I18n.t("instances.sort.playtime"), icon: "activity"},
+                    {value: "name", label: I18n.t("instances.sort.name"), icon: "tag"},
+                    {value: "mods", label: I18n.t("instances.sort.mods"), icon: "package"}
+                ]
+                onPicked: (v) => page.sortMode = v
+            }
+            IconButton {
+                icon: page.reverseSort ? "arrow-down" : "arrow-up"
+                tooltip: page.reverseSort ? I18n.t("instances.sort.descending") : I18n.t("instances.sort.ascending")
+                tint: Theme.text
+                onClicked: page.reverseSort = !page.reverseSort
+            }
+            Item { Layout.fillWidth: true }
+            Repeater {
+                model: [
+                    {value: "grid", icon: "grid", key: "instances.view.grid"},
+                    {value: "list", icon: "list", key: "instances.view.list"},
+                    {value: "spotlight", icon: "layout", key: "instances.view.spotlight"}
+                ]
+                Rectangle {
+                    required property var modelData
+                    width: 37
+                    height: 36
+                    radius: 9
+                    color: page.viewMode === modelData.value ? Theme.accentSoft : Theme.bg2
+                    border.width: 1
+                    border.color: page.viewMode === modelData.value ? Theme.accent : Theme.border
+                    IconButton {
+                        anchors.centerIn: parent
+                        icon: modelData.icon
+                        iconSize: 17
+                        buttonSize: 32
+                        tint: page.viewMode === modelData.value ? Theme.accent : Theme.textSecondary
+                        tooltip: I18n.t(modelData.key)
+                        onClicked: page.viewMode = modelData.value
+                    }
                 }
             }
         }
@@ -186,7 +303,7 @@ PageShell {
                 spacing: Dimensions.spacingLg
 
                 Repeater {
-                    model: Profiles.model
+                    model: Profiles.browserModel
 
                     Item {
                         id: profileDelegate
@@ -205,9 +322,11 @@ PageShell {
                         required property string gameBranch
                         required property string protonPath
                         required property bool favorite
+                        required property int totalPlaySeconds
+                        required property real lastPlayedEpoch
 
                         width: widthForColumns()
-                        height: 236
+                        height: page.viewMode === "list" ? 160 : (page.viewMode === "spotlight" ? 260 : 226)
 
                         ProfileCard {
                             anchors.fill: parent
@@ -226,6 +345,9 @@ PageShell {
                             gameBranch: profileDelegate.gameBranch
                             protonPath: profileDelegate.protonPath
                             favorite: profileDelegate.favorite
+                            totalPlaySeconds: profileDelegate.totalPlaySeconds
+                            lastPlayedEpoch: profileDelegate.lastPlayedEpoch
+                            viewMode: page.viewMode
 
                             onFavoriteToggled: Profiles.toggleFavorite(profileDelegate.profileId)
                             onLaunchRequested: Profiles.launchInstance(profileDelegate.profileId)

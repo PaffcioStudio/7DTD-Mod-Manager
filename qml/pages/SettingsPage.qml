@@ -322,10 +322,6 @@ PageShell {
                 width: Math.min(parent.width, page.currentSection === "about" ? 900 : 760)
                 spacing: 10
 
-                PageDescription {
-                    text: I18n.t("settings.subtitle")
-                    maxTextWidth: 760
-                }
 
                 // =========================================================== #
                 // GENERAL
@@ -1045,25 +1041,88 @@ PageShell {
                             font.family: Theme.fontFamily
                         }
 
+                        Text {
+                            text: I18n.t("settings.about.faq.group.steam")
+                            Layout.fillWidth: true
+                            Layout.topMargin: 10
+                            color: Theme.textSecondary
+                            font.pixelSize: Typography.body
+                            font.weight: Font.DemiBold
+                            font.family: Theme.fontFamily
+                        }
                         FaqItem {
                             question: I18n.t("settings.about.faq.steamQ")
                             answer: I18n.t("settings.about.faq.steamA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.gameDownloadQ")
+                            answer: I18n.t("settings.about.faq.gameDownloadA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.modDownloadQ")
+                            answer: I18n.t("settings.about.faq.modDownloadA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.modVersionQ")
+                            answer: I18n.t("settings.about.faq.modVersionA")
+                        }
+                        Text {
+                            text: I18n.t("settings.about.faq.group.instances")
+                            Layout.fillWidth: true
+                            Layout.topMargin: 10
+                            color: Theme.textSecondary
+                            font.pixelSize: Typography.body
+                            font.weight: Font.DemiBold
+                            font.family: Theme.fontFamily
                         }
                         FaqItem {
                             question: I18n.t("settings.about.faq.instanceQ")
                             answer: I18n.t("settings.about.faq.instanceA")
                         }
                         FaqItem {
+                            question: I18n.t("settings.about.faq.modsMissingQ")
+                            answer: I18n.t("settings.about.faq.modsMissingA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.gameLaunchQ")
+                            answer: I18n.t("settings.about.faq.gameLaunchA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.playtimeQ")
+                            answer: I18n.t("settings.about.faq.playtimeA")
+                        }
+                        FaqItem {
                             question: I18n.t("settings.about.faq.presetsQ")
                             answer: I18n.t("settings.about.faq.presetsA")
+                        }
+                        Text {
+                            text: I18n.t("settings.about.faq.group.maintenance")
+                            Layout.fillWidth: true
+                            Layout.topMargin: 10
+                            color: Theme.textSecondary
+                            font.pixelSize: Typography.body
+                            font.weight: Font.DemiBold
+                            font.family: Theme.fontFamily
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.appUpdatesQ")
+                            answer: I18n.t("settings.about.faq.appUpdatesA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.modUpdatesQ")
+                            answer: I18n.t("settings.about.faq.modUpdatesA")
                         }
                         FaqItem {
                             question: I18n.t("settings.about.faq.logsQ")
                             answer: I18n.t("settings.about.faq.logsA")
                         }
                         FaqItem {
-                            question: I18n.t("settings.about.faq.appUpdatesQ")
-                            answer: I18n.t("settings.about.faq.appUpdatesA")
+                            question: I18n.t("settings.about.faq.downloadStorageQ")
+                            answer: I18n.t("settings.about.faq.downloadStorageA")
+                        }
+                        FaqItem {
+                            question: I18n.t("settings.about.faq.backupQ")
+                            answer: I18n.t("settings.about.faq.backupA")
                         }
                     }
 

@@ -37,7 +37,6 @@ PageShell {
         anchors.margins: Dimensions.pagePad
         anchors.topMargin: Dimensions.spacingLg
         spacing: Dimensions.spacingMd
-        PageDescription { text: I18n.t("protons.help"); maxTextWidth: 760 }
         RowLayout {
             Layout.fillWidth: true
             SearchBar {

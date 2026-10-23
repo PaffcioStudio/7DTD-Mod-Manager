@@ -60,13 +60,14 @@ def test_navigation_is_scrollable_but_settings_remains_pinned():
     assert 'duration: Theme.animationsEnabled ? 160 : 0' in SIDEBAR
 
 
-def test_labels_exist_in_both_languages_and_release_version_is_unchanged():
+def test_labels_exist_in_both_languages_and_release_version_is_updated():
     for key in ('nav.gameEnvironment', 'nav.tools'):
         assert LANGUAGE.count(f'"{key}"') == 2
     assert '"nav.gameEnvironment": "Gra i środowisko"' in LANGUAGE
     assert '"nav.gameEnvironment": "Game & Environment"' in LANGUAGE
     assert NOTES.count('## (latest)') == 1
-    assert '## (latest) 1.0.45\n' in NOTES
+    assert '## (latest) 1.0.46\n' in NOTES
+    assert '## (old) 1.0.45\n' in NOTES
     assert '## (old) 1.0.44\n' in NOTES
     assert NOTES.index('Reorganized the sidebar') < NOTES.index('## (old) 1.0.44')
-    assert 'APP_VERSION = "1.0.45"' in (ROOT / 'src/services/app_info.py').read_text()
+    assert 'APP_VERSION = "1.0.46"' in (ROOT / 'src/services/app_info.py').read_text()

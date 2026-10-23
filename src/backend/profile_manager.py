@@ -23,6 +23,7 @@ from datetime import datetime
 
 from PySide6.QtCore import (
     QAbstractListModel,
+    QSortFilterProxyModel,
     QModelIndex,
     Property,
     QObject,
@@ -35,6 +36,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 
 from backend import instances as inst
+from backend.playtime import PlaytimeStore
 from backend import library
 from backend import library_ops
 from backend.events import EventBus
@@ -70,6 +72,8 @@ class ProfileListModel(QAbstractListModel):
     GameBranchRole = IdRole + 16
     FavoriteRole = IdRole + 17
     ProtonPathRole = IdRole + 18
+    TotalPlaySecondsRole = IdRole + 19
+    LastPlayedEpochRole = IdRole + 20
 
     ROLES = {
         IdRole: b"profileId",
@@ -91,6 +95,8 @@ class ProfileListModel(QAbstractListModel):
         GameBranchRole: b"gameBranch",
         FavoriteRole: b"favorite",
         ProtonPathRole: b"protonPath",
+        TotalPlaySecondsRole: b"totalPlaySeconds",
+        LastPlayedEpochRole: b"lastPlayedEpoch",
     }
 
     def __init__(self, manager: "ProfileManager", parent=None) -> None:
@@ -111,6 +117,10 @@ class ProfileListModel(QAbstractListModel):
         profile = self._profiles[index.row()]
         if role == self.IsActiveRole:
             return profile.id == self.active_id
+        if role == self.TotalPlaySecondsRole:
+            return self._manager._playtime.seconds(profile.id)
+        if role == self.LastPlayedEpochRole:
+            return self._manager._playtime.last_played(profile.id)
         if role == self.IsRunningRole:
             return profile.id == self._manager.running_instance_id
         if role in (self.ModCountRole, self.EnabledCountRole):
@@ -170,6 +180,74 @@ class ProfileListModel(QAbstractListModel):
             self.dataChanged.emit(index, index)
 
 
+class InstanceBrowserModel(QSortFilterProxyModel):
+    """User-selected browsing order and filters without editing the registry."""
+
+    def __init__(self, source: ProfileListModel, parent=None):
+        super().__init__(parent)
+        self.setSourceModel(source)
+        self.setDynamicSortFilter(True)
+        self.filter_mode = "all"
+        self.sort_mode = "created"
+        self.descending = True
+        self.sort(0, Qt.SortOrder.AscendingOrder)
+
+    def update_options(self, filter_mode: str, sort_mode: str, descending: bool) -> None:
+        if filter_mode not in {"all", "favorites", "played", "unplayed", "running", "recent"}:
+            filter_mode = "all"
+        if sort_mode not in {"created", "last", "playtime", "name", "mods"}:
+            sort_mode = "created"
+        self.filter_mode, self.sort_mode, self.descending = filter_mode, sort_mode, descending
+        self.invalidateFilter()
+        self.invalidate()
+        self.sort(0, Qt.SortOrder.DescendingOrder if descending else Qt.SortOrder.AscendingOrder)
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        source = self.sourceModel()
+        index = source.index(source_row, 0, source_parent)
+        mode = self.filter_mode
+        get = source.data
+        if mode == "favorites":
+            return bool(get(index, source.FavoriteRole))
+        if mode == "played":
+            return get(index, source.TotalPlaySecondsRole) > 0
+        if mode == "unplayed":
+            return get(index, source.TotalPlaySecondsRole) == 0
+        if mode == "running":
+            return bool(get(index, source.IsRunningRole))
+        if mode == "recent":
+            from time import time
+            played = get(index, source.LastPlayedEpochRole)
+            return played > 0 and time() - played <= 7 * 86400
+        return True
+
+    def lessThan(self, left, right):
+        source = self.sourceModel()
+        # Preserve the previous default browsing behavior: favorites remain
+        # first when sorting by creation date, even after reversing the order.
+        # Other explicit sorts honor their requested value without grouping.
+        if self.sort_mode == "created":
+            left_favorite = bool(source.data(left, source.FavoriteRole))
+            right_favorite = bool(source.data(right, source.FavoriteRole))
+            if left_favorite != right_favorite:
+                return not left_favorite if self.descending else left_favorite
+        role = {"created": source.CreatedTextRole,
+                "last": source.LastPlayedEpochRole,
+                "playtime": source.TotalPlaySecondsRole,
+                "name": source.NameRole,
+                "mods": source.EnabledCountRole}[self.sort_mode]
+        if self.sort_mode == "created":
+            a = source.profiles[left.row()].created_at.timestamp()
+            b = source.profiles[right.row()].created_at.timestamp()
+        else:
+            a, b = source.data(left, role), source.data(right, role)
+        if self.sort_mode == "name":
+            a, b = str(a).casefold(), str(b).casefold()
+        if a == b:
+            return str(source.data(left, source.NameRole)).casefold() < str(source.data(right, source.NameRole)).casefold()
+        return a < b
+
+
 class ProfileManager(QObject):
     """Exposed to QML as ``Profiles`` - rejestr instancji gry."""
 
@@ -194,6 +272,8 @@ class ProfileManager(QObject):
         self._game = game
         self._instances: list[inst.Instance] = []
         self._model = ProfileListModel(self)
+        self._browser_model = InstanceBrowserModel(self._model, self)
+        self._playtime = PlaytimeStore(fs.playtime_path())
         self._active_id = inst.DEFAULT_INSTANCE_ID
         self._running_id = ""
         self._launch_in_progress = False
@@ -290,6 +370,22 @@ class ProfileManager(QObject):
     def model(self) -> QAbstractListModel:
         return self._model
 
+    @Property("QVariant", constant=True)
+    def browserModel(self) -> QAbstractListModel:
+        return self._browser_model
+
+    @Slot(str, str, bool)
+    def setBrowserOptions(self, filter_mode: str, sort_mode: str, descending: bool) -> None:
+        self._browser_model.update_options(filter_mode, sort_mode, descending)
+
+    @Property(int, notify=runningInstanceChanged)
+    def totalPlaySeconds(self) -> int:
+        return self._playtime.total_seconds({i.instance_id for i in self._instances})
+
+    @Property(int, notify=runningInstanceChanged)
+    def playedInstancesCount(self) -> int:
+        return sum(1 for i in self._instances if self._playtime.seconds(i.instance_id) > 0)
+
     @Property(int, notify=instancesChanged)
     def count(self) -> int:
         return len(self._model.profiles)
@@ -354,6 +450,23 @@ class ProfileManager(QObject):
             if self._launch_in_progress:
                 self._launch_in_progress = False
                 self.launchInProgressChanged.emit()
+        # Count only /proc-confirmed gameplay; a successful Steam command is
+        # not evidence that the game started. Do not count Wine helper PIDs
+        # as separate sessions. When paths are explicit, ignore untagged
+        # helper processes rather than assigning them to the default profile.
+        observed = {}
+        if running_id:
+            processes = self._game.runningProcesses
+            tagged = any(p.get("userDataFolder") for p in processes)
+            for p in processes:
+                folder = p.get("userDataFolder", "")
+                if tagged:
+                    match = inst.match_instance_by_user_data_folder(folder, self._instances) if folder else None
+                    if not match or match.instance_id != running_id:
+                        continue
+                observed[running_id] = (int(p["pid"]), float(p["startedAt"]))
+                break
+        self._playtime.update(observed)
         self.runningInstanceChanged.emit()
         self._model.touch_all()
 
