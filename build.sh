@@ -111,14 +111,32 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD"
 PAYLOAD="$BUILD/opt/$APP_ID"
 
-# project payload (without dev files and the environment - handled separately)
+# project payload - ALLOWLIST: only what the app needs at runtime goes into the
+# package (launcher, sources, QML, assets, license, readme). Everything else
+# (git-*.sh, venv.sh, build.sh, test.sh, tests/, tools/, docs/, scripts/, *.md
+# notes, private/dev files) stays out - new dev files can never leak into the
+# .deb/.AppImage by accident. The environment (.venv) is handled separately.
 mkdir -p "$PAYLOAD"
 rsync -a \
-    --exclude '.venv/' --exclude '.git/' --exclude '.build/' --exclude 'dist/' \
-    --exclude '.claude/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '*.pyc' --exclude '*.zip' \
-    --include '/README.md' --exclude '*.md' \
-    --exclude '.mygit*' --exclude 'shots/' \
+    --exclude '__pycache__/' --exclude '*.pyc' --exclude '*.pyo' \
+    --exclude '*.qmlc' --exclude '*.jsc' --exclude '*.aotstats' \
+    --include '/run.sh' \
+    --include '/LICENSE' \
+    --include '/README.md' \
+    --include '/src/***' \
+    --include '/qml/***' \
+    --include '/assets/***' \
+    --exclude '*' \
     "$PROJECT_DIR/" "$PAYLOAD/"
+
+# safety net: fail the build if anything outside the allowlist ended up in the payload
+LEAKED="$(find "$PAYLOAD" -mindepth 1 -maxdepth 1 \
+    ! -name run.sh ! -name LICENSE ! -name README.md \
+    ! -name src ! -name qml ! -name assets -printf '%f\n')"
+if [ -n "$LEAKED" ]; then
+    fail "W payloadzie są pliki spoza allowlisty: $(echo "$LEAKED" | tr '\n' ' ')"
+    exit 1
+fi
 # the whole environment (the app then runs without any system dependencies)
 # note: the trailing slash on the source = copy its CONTENTS into .venv (no nesting)
 rsync -a "$PROJECT_DIR/.venv/" "$PAYLOAD/.venv"
