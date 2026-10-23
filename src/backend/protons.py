@@ -9,6 +9,9 @@ import shutil
 import tarfile
 import tempfile
 import threading
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import requests
@@ -18,6 +21,73 @@ from backend import game_process
 from services.i18n_message import message
 
 logger = logging.getLogger(__name__)
+
+# Refreshing QML bindings on every 1 MiB received can overwhelm the Qt event
+# queue on fast downloads. Show new transfer progress at most ~8 times/sec.
+PROGRESS_INTERVAL_SECONDS = 0.125
+EXTRACT_POLL_SECONDS = 0.1
+
+
+class ProgressLimiter:
+    """Worker-only callback adapter: never queue unbounded GUI progress events."""
+
+    def __init__(self, callback, interval: float = PROGRESS_INTERVAL_SECONDS, clock=None):
+        self._callback = callback
+        self._interval = interval
+        self._clock = clock or time.monotonic
+        self._last = None
+        self._last_value = None
+
+    def __call__(self, percent: float) -> None:
+        now = self._clock()
+        value = max(0.0, min(100.0, float(percent)))
+        if (self._last is None or now - self._last >= self._interval
+                or (value >= 100.0 and value != self._last_value)):
+            if value == self._last_value:
+                return
+            self._last = now
+            self._last_value = value
+            self._callback(value)
+
+
+def extract_in_process(archive: Path, destination: Path, cancel: threading.Event) -> None:
+    """Run safe extraction in an isolated Python process, interruptible by Cancel."""
+    if cancel.is_set():
+        raise Cancelled()
+    helper = Path(__file__).with_name('proton_extract_worker.py')
+    proc = subprocess.Popen(
+        [sys.executable, str(helper), str(archive), str(destination)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        while True:
+            if cancel.is_set():
+                raise Cancelled()
+            try:
+                exit_code = proc.wait(timeout=EXTRACT_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        if cancel.is_set():
+            raise Cancelled()
+        stderr = proc.communicate()[1].decode('utf-8', 'replace').strip()
+        if exit_code != 0:
+            reason = stderr.splitlines()[-1][:400] if stderr else 'Proton archive extraction failed'
+            if 'FilterError:' in reason or 'OutsideDestinationError:' in reason:
+                raise tarfile.FilterError(reason)
+            raise ValueError(reason)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        if proc.stderr:
+            proc.stderr.close()
+
 RELEASES_URL = 'https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases'
 
 
@@ -125,10 +195,9 @@ def install_release(release: dict, cancel: threading.Event, progress, phase, ses
         phase('protons.extracting')
         extracted = staging / 'unpacked'
         extracted.mkdir()
-        with tarfile.open(archive) as source:
-            for member in source:
-                check()
-                source.extract(member, extracted, filter='data')
+        # An isolated process handles decompression and filesystem operations.
+        # A Python thread here still competes with Qt for the interpreter GIL.
+        extract_in_process(archive, extracted, cancel)
         children = list(extracted.iterdir())
         if len(children) != 1 or not children[0].is_dir() or children[0].is_symlink():
             raise ValueError('Invalid Proton archive layout')
@@ -145,11 +214,13 @@ def install_release(release: dict, cancel: threading.Event, progress, phase, ses
 
 class ProtonManager(QObject):
     changed = Signal()
+    progressChanged = Signal()
+    statusChanged = Signal()
     _event = Signal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._installed = installed_protons()
+        self._installed = []
         self._available = []
         self._busy = False
         self._progress = 0.0
@@ -158,6 +229,8 @@ class ProtonManager(QObject):
         self._cancel = threading.Event()
         self._worker = None
         self._event.connect(self._receive)
+        self._refresh_serial = 0
+        self.refreshInstalled()
 
     @Property('QVariantList', notify=changed)
     def installed(self): return self._installed
@@ -168,10 +241,10 @@ class ProtonManager(QObject):
     @Property(bool, notify=changed)
     def busy(self): return self._busy
 
-    @Property(float, notify=changed)
+    @Property(float, notify=progressChanged)
     def progress(self): return self._progress
 
-    @Property(str, notify=changed)
+    @Property(str, notify=statusChanged)
     def status(self): return self._status
 
     @Property(str, notify=changed)
@@ -179,14 +252,34 @@ class ProtonManager(QObject):
 
     @Slot(str, object)
     def _receive(self, kind, value):
-        if kind == 'catalog': self._available = value
-        elif kind == 'progress': self._progress = value
-        elif kind == 'status': self._status = message(value)
-        elif kind == 'error': self._status = message('protons.error', {'error': str(value)})
+        if kind == 'progress':
+            if value != self._progress:
+                self._progress = value
+                self.progressChanged.emit()
+            return
+        if kind in ('status', 'error'):
+            new_status = (message(value) if kind == 'status'
+                          else message('protons.error', {'error': str(value)}))
+            if new_status != self._status:
+                self._status = new_status
+                self.statusChanged.emit()
+            return
+        if kind == 'installed':
+            serial, versions = value
+            if serial != self._refresh_serial:
+                return  # an older scan must not override a finished installation
+            self._installed = versions
+        elif kind == 'catalog':
+            self._available = value
         elif kind == 'done':
             self._busy = False
             self._active_name = ''
-            self._installed = installed_protons()
+            # Results were collected in the worker, not on Qt's GUI thread.
+            self._refresh_serial += 1
+            if value is not None:
+                self._installed = value
+        else:
+            return
         self.changed.emit()
 
     def _start(self, operation, name=""):
@@ -198,6 +291,8 @@ class ProtonManager(QObject):
         self._progress = 0
         self._status = ''
         self.changed.emit()
+        self.progressChanged.emit()
+        self.statusChanged.emit()
         def work():
             try:
                 operation()
@@ -207,14 +302,27 @@ class ProtonManager(QObject):
                 logger.exception('Proton operation failed')
                 self._event.emit('error', str(exc))
             finally:
-                self._event.emit('done', None)
+                try:
+                    versions = installed_protons()
+                except Exception:
+                    logger.exception('Could not refresh installed Proton versions')
+                    versions = None
+                self._event.emit('done', versions)
         self._worker = threading.Thread(target=work, daemon=True)
         self._worker.start()
 
     @Slot()
     def refreshInstalled(self):
-        self._installed = installed_protons()
-        self.changed.emit()
+        self._refresh_serial += 1
+        serial = self._refresh_serial
+        def scan():
+            try:
+                versions = installed_protons()
+            except Exception:
+                logger.exception('Could not scan installed Proton versions')
+                return
+            self._event.emit('installed', (serial, versions))
+        threading.Thread(target=scan, daemon=True, name='ProtonScan').start()
 
     @Slot()
     def refreshAvailable(self):
@@ -233,7 +341,8 @@ class ProtonManager(QObject):
         release = next((item for item in self._available if item['name'] == name), None)
         if release:
             def install():
-                install_release(release, self._cancel, lambda p: self._event.emit('progress', p),
+                smooth_progress = ProgressLimiter(lambda p: self._event.emit('progress', p))
+                install_release(release, self._cancel, smooth_progress,
                                 lambda key: self._event.emit('status', key))
                 self._event.emit('status', 'protons.installedSuccess')
             self._start(install, name)
@@ -245,22 +354,20 @@ class ProtonManager(QObject):
     def remove(self, path):
         if self._busy or game_process.is_game_running():
             self._status = message('protons.removeBlocked')
-            self.changed.emit()
+            self.statusChanged.emit()
             return
         item = next((p for p in self._installed if p['path'] == path and p['managed']), None)
         if not item: return
         from backend.instances import load_instances
         if any(i.proton_path == path for i in load_instances()):
             self._status = message('protons.inUse')
-            self.changed.emit()
+            self.statusChanged.emit()
             return
         target = Path(path).parent
         if target.parent.resolve() != managed_root().resolve() or target.is_symlink(): return
-        try:
-            shutil.rmtree(target)
-            self.refreshInstalled()
-        except OSError as exc:
-            self._receive('error', str(exc))
+        # Removing a GE-Proton tree may delete thousands of files. Do it in
+        # the worker, never in the Qt callback handling the button click.
+        self._start(lambda: shutil.rmtree(target))
 
     def shutdown(self):
         self._cancel.set()

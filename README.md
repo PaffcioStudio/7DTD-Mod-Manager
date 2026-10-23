@@ -4,6 +4,8 @@ A Linux desktop launcher and mod manager for **7 Days to Die**, built with **Pyt
 
 7DTD Mod Manager brings game-version control, isolated instances, mod installation, modpacks, overhauls, backups, downloads, updates, conflict detection, profiles, and online mod discovery into one desktop application.
 
+GE-Proton downloads, verification, and installation run outside the main Qt event loop; archive extraction runs in a separate Python process, and progress updates are rate-limited so the interface stays responsive on fast connections. Installed Proton scans and removal also run in background workers.
+
 ## Screenshots
 
 The repository includes English UI screenshots captured from the current application. They use the current local application state and live services, with no mock data or source-text substitutions. Regenerate them with `.venv/bin/python tests/screenshot_en.py`; capture one page with `.venv/bin/python tests/screenshot_en.py protons`. The script uses English only for the capture sessions, opens sidebar groups deterministically, and never saves changes to your preferences (including which groups are expanded). It also captures three sidebar layouts: `sidebar-default-en.png`, `sidebar-game-en.png`, and `sidebar-tools-en.png`. Use `.venv/bin/python tests/screenshot_en.py sidebar-game` to capture just one of them. Images are stored in `docs/screenshots/`.

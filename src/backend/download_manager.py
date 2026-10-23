@@ -74,6 +74,41 @@ from services.settings_service import SettingsService
 logger = logging.getLogger(__name__)
 
 TICK_MS = 120
+DOWNLOAD_PROGRESS_EVENT_INTERVAL = 0.125
+
+
+class DownloadProgressLimiter:
+    """Coalesce worker callbacks before enqueuing Qt signals.
+
+    Filtering signals in the GUI slot is too late: the event queue would
+    already contain every 64 KiB / 1 MiB progress notification.
+    """
+
+    def __init__(self, emit, *, clock=None, interval=DOWNLOAD_PROGRESS_EVENT_INTERVAL):
+        self._emit = emit
+        self._clock = clock or time.monotonic
+        self._interval = interval
+        self._last_at = None
+        self._last_phase = None
+        self._last_payload = None
+
+    def __call__(self, done: int, total: int, label: str = "") -> None:
+        label = str(label or "")
+        # Per-file extraction labels can differ on every callback. Keep their
+        # event category stable and send the most recent detail periodically.
+        phase = label.split('|', 1)[0] if label.startswith('__I18N__:') else ('status' if label else 'transfer')
+        now = self._clock()
+        payload = (done, total, label)
+        finished = not label and total > 0 and done >= total
+        if (self._last_at is None or phase != self._last_phase
+                or now - self._last_at >= self._interval
+                or (finished and payload != self._last_payload)):
+            if payload == self._last_payload:
+                return
+            self._last_at = now
+            self._last_phase = phase
+            self._last_payload = payload
+            self._emit(done, total, label)
 
 
 class DownloadItem:
@@ -1424,6 +1459,8 @@ class DownloadManager(QObject):
         cancel = item.cancel_event
         pause = item.pause_event
         client = SevenDaysModsClient()
+        emit_progress = DownloadProgressLimiter(
+            lambda done, total, label: self.urlProgress.emit(item.id, done, total, label))
 
         def check_cancel() -> None:
             if cancel.is_set():
@@ -1435,7 +1472,7 @@ class DownloadManager(QObject):
                 # wypływa z download_to (nie łapie własnych wyjątków requests),
                 # a istniejący .part pozwala wznowić przez HTTP Range
                 raise modpack_downloader.DownloadPaused("Pauza")
-            self.urlProgress.emit(item.id, done, total, "")
+            emit_progress(done, total, "")
 
         def worker() -> None:
             temp_dir: Path | None = None
@@ -1691,8 +1728,7 @@ class DownloadManager(QObject):
                 def extract_progress(done: int, total: int, label: str) -> None:
                     # Wypakowywanie raportuje LICZBĘ PLIKÓW, nie bajty. Nie
                     # przepuszczamy tego licznika jako postępu transferu.
-                    self.urlProgress.emit(
-                        item.id,
+                    emit_progress(
                         item.downloaded,
                         item.total_bytes,
                         label or i18n_message("download.mod.extracting", {"name": ""}),
@@ -2031,9 +2067,11 @@ class DownloadManager(QObject):
         """Odpala wątek roboczy dla pozycji URL (promowanej z kolejki)."""
         cancel, pause = item.cancel_event, item.pause_event
         temp_dir = item.temp_dir
+        emit_progress = DownloadProgressLimiter(
+            lambda done, total, label: self.urlProgress.emit(item.id, done, total, label))
 
         def progress(done: int, total: int, label: str) -> None:
-            self.urlProgress.emit(item.id, done, total, label)
+            emit_progress(done, total, label)
 
         def worker() -> None:
             # worker PRZYPISUJE temp_dir (= None po sprzataniu), wiec bez nonlocal
