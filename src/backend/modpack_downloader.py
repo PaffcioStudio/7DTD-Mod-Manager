@@ -27,7 +27,9 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tempfile
 import subprocess
+import xml.etree.ElementTree as ET
 import http.cookiejar
 import urllib.error
 import urllib.request
@@ -47,7 +49,7 @@ from backend.fileops import (
     ensure_free_space,
     raise_if_no_space,
 )
-from backend.modinfo import find_modinfo
+from backend.modinfo import find_modinfo, parse_modinfo
 
 USER_AGENT = "mod-manager/1.0 (+7 Days to Die mod manager)"
 REQUEST_TIMEOUT = 20
@@ -558,6 +560,47 @@ def find_mods_root_in_extracted(extracted_dir: Path) -> Optional[Path]:
         pass
 
     return None
+
+
+def prepare_mods_root_in_extracted(
+    extracted_dir: Path, *, fallback_name: str = "Mod"
+) -> Optional[Path]:
+    """Rozpoznaje także ZIP z pojedynczym modem rozpakowanym *bez folderu*.
+
+    Takie archiwum ma ModInfo.xml, Config/, Resources/ i DLL-e od razu
+    w korzeniu. Tworzymy tymczasowy katalog z jednym podfolderem moda,
+    bez kopiowania zawartości i bez zmieniania samego ZIP-a. Dzięki temu
+    instalacja do Biblioteki i do osobnej instancji używa wspólnej ścieżki
+    obsługującej standardowe foldery modów.
+
+    ModInfo.Name jest preferowaną nazwą folderu (mody mogą zakładać konkretne
+    ścieżki Mods/<Name>). Dane z XML są traktowane jako niezaufane nazwy.
+    """
+    extracted_dir = Path(extracted_dir)
+    if not extracted_dir.is_dir():
+        return None
+    modinfo = find_modinfo(extracted_dir)
+    if modinfo is None:
+        return find_mods_root_in_extracted(extracted_dir)
+
+    try:
+        mod_name = parse_modinfo(modinfo).get("mod_name", "")
+    except (OSError, ValueError, ET.ParseError):
+        mod_name = ""
+    # Nazwa z ModInfo.xml nie może stanowić ścieżki bezwzględnej ani zawierać
+    # separatorów, kropek prowadzących do przejścia do katalogu nadrzędnego.
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", mod_name or fallback_name)
+    safe_name = safe_name.strip("._-")[:100] or "Mod"
+
+    # Losowa nazwa katalogu roboczego zapobiega kolizji z plikami z ZIP-a.
+    # Zachowujemy nawet dodatkowe, nietypowe pliki/foldery w korzeniu moda.
+    entries = list(extracted_dir.iterdir())
+    staging_root = Path(tempfile.mkdtemp(prefix=".mm-single-mod-", dir=extracted_dir))
+    mod_dir = staging_root / safe_name
+    mod_dir.mkdir()
+    for entry in entries:
+        shutil.move(str(entry), str(mod_dir / entry.name))
+    return staging_root
 
 
 def mods_root_has_valid_mods(mods_root: Path) -> bool:

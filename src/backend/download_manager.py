@@ -1739,7 +1739,8 @@ class DownloadManager(QObject):
                     progress_cb=extract_progress,
                     cancel_event=cancel,
                 )
-                mods_root = modpack_downloader.find_mods_root_in_extracted(temp_dir)
+                mods_root = modpack_downloader.prepare_mods_root_in_extracted(
+                    temp_dir, fallback_name=info.slug)
                 if mods_root is None or not modpack_downloader.mods_root_has_valid_mods(mods_root):
                     # Some uploads are standalone POI/prefab exports (XML + TTS),
                     # rather than broken archives. Prepare a regular modlet so
@@ -2111,7 +2112,8 @@ class DownloadManager(QObject):
                         self.urlState.emit(item.id, "downloading")
                         continue
 
-                mods_root = modpack_downloader.find_mods_root_in_extracted(extracted)
+                mods_root = modpack_downloader.prepare_mods_root_in_extracted(
+                    extracted, fallback_name=item.title)
                 if mods_root is None or not modpack_downloader.mods_root_has_valid_mods(mods_root):
                     raise modpack_downloader.DownloadError(
                         i18n_message("download.mod.modpackInvalid"))

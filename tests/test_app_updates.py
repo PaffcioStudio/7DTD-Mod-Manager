@@ -89,6 +89,19 @@ def test_notes_since_understands_labeled_release_headings():
     assert "How to report problems" not in notes
     assert au.notes_since(body, "1.0.45").startswith("## (latest) 1.0.45")
 
+def test_notes_since_collects_general_addendum_for_latest_version():
+    body = (
+        "## (latest) 1.0.46\n- New release\n\n"
+        "## (old) 1.0.45\n- Previous release\n\n"
+        "## (general) 1.0.46\n- Additional overhaul fix\n"
+    )
+    notes = au.notes_since(body, "1.0.45")
+    assert "New release" in notes
+    assert "Additional overhaul fix" in notes
+    assert "Previous release" not in notes
+    assert notes.count("1.0.46") == 2
+
+
 def test_project_release_notes_and_app_version_are_consistent():
     release_notes = (ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
     from services.app_info import APP_VERSION
