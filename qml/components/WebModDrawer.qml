@@ -98,23 +98,33 @@ Item {
         return raw.split(",").map(function(v) { return v.trim() }).filter(function(v) { return v !== "" })
     }
 
-    function fileAllowedForSelection(file) {
+    function fileVersionStatus(file) {
         var detected = file.detectedGameVersions || []
-        var selected = drawer.selectedGameVersion
-        if (selected !== "")
-            // Plik bez wersji w nazwie (np. "Jan_Overhaul_Food.zip") dziedziczy
-            // wersje zadeklarowane przez moda. Wystarczy, ze ktoras pasuje do
-            // wybranego filtra (mod moze deklarowac kilka rodzin naraz).
-            return detected.length > 0
-                   ? versionsMatch(selected, detected)
-                   : versionsMatch(selected, declaredModVersionFallback())
+        var declared = declaredModVersionFallback()
+        var versions = detected.length > 0 ? detected : declared
+        if (versions.length === 0)
+            return "unknown"
+        if (drawer.selectedGameVersion === "")
+            return versions.length === 1 ? "compatible" : "ambiguous"
+        return versionsMatch(drawer.selectedGameVersion, versions)
+               ? "compatible" : "incompatible"
+    }
 
-        // Bez wybranego filtra nie wybieramy w ciemno pliku z nieznaną/
-        // wielowersyjną kompatybilnością. Bezpieczny wyjątek: mod sam
-        // deklaruje dokładnie jedną wersję gry.
-        if (detected.length === 0)
-            return declaredModVersionFallback().length === 1
-        return detected.length === 1
+    function fileAllowedForSelection(file) {
+        var status = fileVersionStatus(file)
+        return status === "compatible" || status === "unknown"
+    }
+
+    property string pendingFileRef: ""
+    property string pendingGameVersion: ""
+    function requestFileDownload(file) {
+        if (fileVersionStatus(file) === "unknown") {
+            pendingFileRef = file.fileRef
+            pendingGameVersion = versionForDownload(file)
+            unverifiedVersionDialog.open()
+            return
+        }
+        Downloads.startModDownloadWithFileVersion(slug, file.fileRef, versionForDownload(file))
     }
 
     // Wersja gry przekazywana backendowi przy pobieraniu pliku:
@@ -128,7 +138,8 @@ Item {
         var detected = (file && file.detectedGameVersions) || []
         if (detected.length === 1)
             return detected[0]
-        return declaredModVersionFallback()[0] || ""
+        var declared = declaredModVersionFallback()
+        return declared.length === 1 ? declared[0] : ""
     }
 
     function selectedVersionLabel() {
@@ -320,10 +331,12 @@ Item {
                                 readonly property string rowState: Downloads.modDownloads[fileRow.modelData.fileRef] || ""
                                 readonly property string modState: Downloads.modDownloads[drawer.slug] || ""
                                 readonly property bool rowBusy: ["queued", "downloading", "paused"].indexOf(rowState) >= 0
+                                readonly property string versionStatus: drawer.fileVersionStatus(fileRow.modelData)
                                 readonly property bool rowCompatible: drawer.fileAllowedForSelection(fileRow.modelData)
+                                readonly property bool versionUnverified: versionStatus === "unknown"
                                 readonly property bool rowLocked: rowBusy || ["queued", "downloading", "paused", "completed"].indexOf(modState) >= 0 || !rowCompatible
                                 Layout.fillWidth: true
-                                implicitHeight: fileRow.rowCompatible ? 58 : 78
+                                implicitHeight: fileRow.versionStatus === "compatible" ? 58 : 78
                                 radius: 9
                                 color: fileHover.hovered ? Theme.bg3 : Theme.bg2
                                 border.width: 1
@@ -336,8 +349,8 @@ Item {
                                     spacing: 10
 
                                     Icon {
-                                        name: !fileRow.rowCompatible ? "alert-triangle" : fileRow.modelData.verified ? "shield" : "package"
-                                        tint: !fileRow.rowCompatible ? Theme.warning : fileRow.modelData.verified ? Theme.success : Theme.textMuted
+                                        name: fileRow.versionStatus !== "compatible" ? "alert-triangle" : fileRow.modelData.verified ? "shield" : "package"
+                                        tint: fileRow.versionStatus !== "compatible" ? Theme.warning : fileRow.modelData.verified ? Theme.success : Theme.textMuted
                                         size: 16
                                         Layout.alignment: Qt.AlignVCenter
                                     }
@@ -379,12 +392,14 @@ Item {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            visible: !fileRow.rowCompatible
-                                            text: drawer.selectedGameVersion !== ""
-                                                  ? I18n.format("discover.drawer.fileIncompatible", {
-                                                        version: drawer.selectedVersionLabel()
-                                                    })
-                                                  : I18n.t("discover.drawer.fileVersionUnknown")
+                                            visible: fileRow.versionStatus !== "compatible"
+                                            text: fileRow.versionUnverified
+                                                  ? I18n.t("discover.drawer.fileVersionUnknown")
+                                                  : fileRow.versionStatus === "ambiguous"
+                                                    ? I18n.t("download.mod.selectGameVersion")
+                                                    : I18n.format("discover.drawer.fileIncompatible", {
+                                                          version: drawer.selectedVersionLabel()
+                                                      })
                                             color: Theme.warning
                                             font.pixelSize: Typography.caption
                                             font.family: Theme.fontFamily
@@ -397,9 +412,7 @@ Item {
                                         icon: fileRow.rowBusy ? "clock" : fileRow.modState === "completed" ? "check" : "download"
                                         compact: true
                                         disabled: fileRow.rowLocked
-                                        onClicked: Downloads.startModDownloadWithFileVersion(
-                                            drawer.slug, fileRow.modelData.fileRef,
-                                            drawer.versionForDownload(fileRow.modelData))
+                                        onClicked: drawer.requestFileDownload(fileRow.modelData)
                                     }
                                 }
 
@@ -482,6 +495,59 @@ Item {
                     }
 
                     Item { Layout.fillHeight: true; Layout.minimumHeight: 20 }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: unverifiedVersionDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(460, drawer.width - 32)
+        padding: 22
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            color: Theme.bg2
+            radius: 12
+            border.width: 1
+            border.color: Theme.border
+        }
+        contentItem: ColumnLayout {
+            spacing: 16
+            Text {
+                text: I18n.t("discover.drawer.unknownVersionTitle")
+                color: Theme.text
+                font.pixelSize: Typography.h3
+                font.weight: Font.DemiBold
+                font.family: Theme.fontFamily
+                Layout.fillWidth: true
+            }
+            Text {
+                text: I18n.t("discover.drawer.unknownVersionWarning")
+                color: Theme.textSecondary
+                wrapMode: Text.WordWrap
+                font.pixelSize: Typography.small
+                font.family: Theme.fontFamily
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Item { Layout.fillWidth: true }
+                SecondaryButton {
+                    text: I18n.t("common.confirm.cancel")
+                    onClicked: unverifiedVersionDialog.close()
+                }
+                PrimaryButton {
+                    text: I18n.t("discover.drawer.downloadUnverified")
+                    onClicked: {
+                        unverifiedVersionDialog.close()
+                        Downloads.startModDownloadWithFileVersion(
+                            drawer.slug, drawer.pendingFileRef, drawer.pendingGameVersion)
+                    }
                 }
             }
         }

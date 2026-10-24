@@ -41,6 +41,7 @@ from backend import instances as inst_mod
 from backend import downloads_cleanup
 from backend import mock_data
 from backend import modpack_downloader
+from backend.archive_extractor import ARCHIVE_SUFFIXES, extract_archive
 from backend import undead_legacy
 from backend import bepinex_loader
 from backend.prefab_archives import prepare_loose_prefab_mod
@@ -1383,6 +1384,24 @@ class DownloadManager(QObject):
         return len(declared) == 1 and game_version_matches(selected, declared)
 
     @staticmethod
+    def _file_version_is_unknown(file, mod_info) -> bool:
+        """Brak danych to nie to samo co jawna niezgodność.
+
+        Tylko dla pojedynczego pliku wybranego ręcznie przez użytkownika.
+        Automatyczny dobór według wersji pozostaje rygorystyczny.
+        """
+        return not detect_file_game_versions(
+            label=file.label, filename=file.filename, mod_version=file.version,
+        ) and not any(str(v).strip() for v in (mod_info.game_versions or []))
+
+    @staticmethod
+    def _external_version_is_unknown(link, mod_info) -> bool:
+        return not detect_artifact_game_versions(
+            label=link.label, filename=link.filename,
+            declared_versions=mod_info.game_versions, mod_version=link.version,
+        ) and not any(str(v).strip() for v in (mod_info.game_versions or []))
+
+    @staticmethod
     def _external_matches_selected_game_version(link, game_version: str, mod_info) -> bool:
         selected = (game_version or "").strip()
         if not selected:
@@ -1513,8 +1532,9 @@ class DownloadManager(QObject):
                     if main_file is None:
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.mod.fileMissing"))
-                    if not self._file_matches_selected_game_version(
-                            main_file, selected_game_version, info):
+                    if (not self._file_matches_selected_game_version(
+                            main_file, selected_game_version, info)
+                            and not self._file_version_is_unknown(main_file, info)):
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.mod.incompatibleFile", {
                                 "version": selected_game_version
@@ -1526,8 +1546,9 @@ class DownloadManager(QObject):
                     if chosen_ext is None:
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.mod.externalMissing"))
-                    if not self._external_matches_selected_game_version(
-                            chosen_ext, selected_game_version, info):
+                    if (not self._external_matches_selected_game_version(
+                            chosen_ext, selected_game_version, info)
+                            and not self._external_version_is_unknown(chosen_ext, info)):
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.mod.incompatibleFile", {
                                 "version": selected_game_version
@@ -1716,7 +1737,7 @@ class DownloadManager(QObject):
                             self.urlState.emit(item.id, "downloading")
                             continue   # download_to wznowi z .part (Range)
 
-                if dest.suffix.lower() != ".zip":
+                if dest.suffix.lower() not in ARCHIVE_SUFFIXES:
                     raise modpack_downloader.DownloadError(
                         i18n_message("download.mod.notZip", {
                             "extension": dest.suffix or "(bez rozszerzenia)"
@@ -1734,7 +1755,7 @@ class DownloadManager(QObject):
                         label or i18n_message("download.mod.extracting", {"name": ""}),
                     )
 
-                modpack_downloader._extract_zip(
+                extract_archive(
                     dest, temp_dir,
                     progress_cb=extract_progress,
                     cancel_event=cancel,
@@ -1751,7 +1772,7 @@ class DownloadManager(QObject):
                     )
                 if mods_root is None or not modpack_downloader.mods_root_has_valid_mods(mods_root):
                     logger.warning(
-                        "ZIP extracted but contains no supported mod/POI: slug=%s "
+                        "Archive extracted but contains no supported mod/POI: slug=%s "
                         "archive=%s entries=%s",
                         info.slug, dest.name,
                         [p.relative_to(temp_dir).as_posix()

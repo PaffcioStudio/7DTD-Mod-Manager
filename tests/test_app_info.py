@@ -1,4 +1,6 @@
 from unittest.mock import patch
+from pathlib import Path
+import re
 
 from PySide6.QtCore import QCoreApplication
 
@@ -20,8 +22,11 @@ def _app():
     return QCoreApplication.instance() or QCoreApplication([])
 
 
-def test_app_version_bumped():
-    assert APP_VERSION == "1.0.46"
+def test_app_version_matches_release_notes():
+    notes = (Path(__file__).resolve().parents[1] / "RELEASE_NOTES.md").read_text(encoding="utf-8")
+    latest = re.search(r"^## \(latest\) (\d+\.\d+\.\d+)$", notes, re.M)
+    assert latest is not None
+    assert APP_VERSION == latest.group(1)
 
 
 def test_search_mod_online_builds_expected_7daystodiemods_url():

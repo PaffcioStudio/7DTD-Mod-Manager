@@ -133,7 +133,7 @@ def test_truncated_zip_is_not_reused():
         temp_dir = Path(d)
         (temp_dir / "download.zip").write_bytes(b"PK\x03\x04 truncated")
         with patch.object(downloader, "_http_download_file") as download, \
-             patch.object(downloader, "_extract_zip"):
+             patch.object(downloader, "extract_archive"):
             downloader.download_and_extract(MIRROR_URL, temp_dir)
         download.assert_called_once()
 

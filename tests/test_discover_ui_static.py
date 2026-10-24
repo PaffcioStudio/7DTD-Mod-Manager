@@ -42,4 +42,7 @@ def test_web_mod_drawer_blocks_downloads_that_do_not_match_selected_game_version
     assert "|| !rowCompatible" in text
     assert 'I18n.t("discover.drawer.fileVersionUnknown")' in text
     assert 'I18n.format("discover.drawer.fileIncompatible"' in text
-    assert 'implicitHeight: fileRow.rowCompatible ? 58 : 78' in text
+    assert 'implicitHeight: fileRow.versionStatus === "compatible" ? 58 : 78' in text
+    assert 'fileVersionStatus(file)' in text
+    assert 'unverifiedVersionDialog.open()' in text
+    assert 'I18n.t("discover.drawer.downloadUnverified")' in text

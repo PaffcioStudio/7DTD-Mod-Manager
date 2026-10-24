@@ -66,8 +66,10 @@ def test_labels_exist_in_both_languages_and_release_version_is_updated():
     assert '"nav.gameEnvironment": "Gra i środowisko"' in LANGUAGE
     assert '"nav.gameEnvironment": "Game & Environment"' in LANGUAGE
     assert NOTES.count('## (latest)') == 1
-    assert '## (latest) 1.0.46\n' in NOTES
+    app_info = (ROOT / 'src/services/app_info.py').read_text(encoding='utf-8')
+    match = re.search(r'^APP_VERSION = "([^"]+)"$', app_info, re.M)
+    assert match, "Missing application version"
+    assert f'## (latest) {match.group(1)}\n' in NOTES
     assert '## (old) 1.0.45\n' in NOTES
     assert '## (old) 1.0.44\n' in NOTES
     assert NOTES.index('Reorganized the sidebar') < NOTES.index('## (old) 1.0.44')
-    assert 'APP_VERSION = "1.0.46"' in (ROOT / 'src/services/app_info.py').read_text()

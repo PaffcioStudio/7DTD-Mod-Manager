@@ -4,6 +4,7 @@ These run even on machines without Qt installed. The dedicated global-search
 unit tests additionally exercise worker/Qt behavior where PySide6 is present.
 """
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,6 +51,8 @@ def test_bilingual_search_labels_and_release_note_are_present():
     assert translations.count('"globalSearch.viewAllWebsite"') == 2
     assert translations.count('"globalSearch.website"') == 2
     notes = read("RELEASE_NOTES.md")
-    current = notes.split("## (latest) 1.0.46", 1)[1].split("## (old) 1.0.45", 1)[0]
-    assert "7daystodiemods.com" in current
-    assert "Pressing Enter" in current
+    # The online-search feature can be documented in a past release after
+    # subsequent versions are published; do not tie this guard to 1.0.46.
+    sections = re.split(r"(?=^## \((?:latest|old|general)\) )", notes, flags=re.M)
+    assert any("7daystodiemods.com" in section and "Pressing Enter" in section
+               for section in sections)

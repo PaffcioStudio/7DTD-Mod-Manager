@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -105,9 +106,18 @@ def test_notes_since_collects_general_addendum_for_latest_version():
 def test_project_release_notes_and_app_version_are_consistent():
     release_notes = (ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
     from services.app_info import APP_VERSION
-    assert APP_VERSION == "1.0.46"
+    # The installed app version is the source of truth; tests must survive
+    # releases without being manually edited for each version number.
+    assert re.fullmatch(r"\d+\.\d+\.\d+", APP_VERSION)
     assert release_notes.count("## (latest) ") == 1
-    assert release_notes.splitlines()[2] == "## (latest) 1.0.46"
+    assert release_notes.splitlines()[2] == f"## (latest) {APP_VERSION}"
     assert "## (old) 1.0.44" in release_notes
-    assert "## 1.0.46" not in release_notes
-    assert (ROOT / "README.md").read_text(encoding="utf-8").count("**Current version:** 1.0.46") == 1
+    assert not re.search(rf"^##\s+{re.escape(APP_VERSION)}(?:\s|$)", release_notes, re.M)
+    assert (ROOT / "README.md").read_text(encoding="utf-8").count(f"**Current version:** {APP_VERSION}") == 1
+
+    # A newer release can place older releases under (old), and optional
+    # (general) appendices can remain at the bottom of the notes file.
+    old_versions = re.findall(r"^## \(old\) (\d+(?:\.\d+)+)$", release_notes, re.M)
+    assert old_versions
+    assert all(au.is_newer(APP_VERSION, version) for version in old_versions)
+    assert old_versions == sorted(old_versions, key=lambda v: tuple(map(int, v.split('.'))), reverse=True)

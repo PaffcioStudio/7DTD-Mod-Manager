@@ -47,7 +47,7 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 
 **Author:** PaffcioStudio
 **Platform:** Linux
-**Current version:** 1.0.46  
+**Current version:** 1.0.47  
 
 ### Instance playtime and browsing
 
@@ -90,7 +90,7 @@ Filter by favorite, played, unplayed, recent (seven days), or running instances.
 
 ### Modpacks and overhauls
 
-- Install supported packages from Git repositories, GitHub releases, and direct ZIP URLs.
+- Install supported packages from Git repositories, GitHub releases, and direct ZIP/7z/RAR URLs.
 - Browse supported overhaul packages through Discover.
 - Reuse cached archives when available.
 - Distinguish actual installation state from historical completed download records.
@@ -371,3 +371,19 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 **PaffcioStudio**
 https://github.com/paffciostudio
+
+
+### ZIP / 7z / RAR mod archives
+
+The launcher supports ZIP, 7z and RAR archives from Discover, direct download
+links and GitHub Releases. 7z and RAR extraction uses the native `libarchive`
+library. On Tuxedo OS / recent Ubuntu releases, install it with
+`sudo apt install libarchive13t64`; on older releases use
+`sudo apt install libarchive13`. The DEB package declares the dependency
+automatically. AppImage users need to have the library installed on the host.
+No external `7z` or `unrar` command is required.
+
+When the author has not specified a reliable game version, Discover lets you
+download the selected file after acknowledging a compatibility warning. Files
+known to be incompatible with the selected game version remain blocked.
+Downloading an unverified file does not guarantee it will work with your game.

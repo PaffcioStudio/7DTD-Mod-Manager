@@ -11,7 +11,7 @@ def test_undead_legacy_mirror_is_downloaded_in_one_cookie_session_without_pre_re
     with tempfile.TemporaryDirectory() as directory:
         temp_dir = Path(directory)
         with patch.object(downloader, "_http_download_file") as download, \
-             patch.object(downloader, "_extract_zip") as extract:
+             patch.object(downloader, "extract_archive") as extract:
             result = downloader.download_and_extract(MIRROR_URL, temp_dir)
         assert result == temp_dir / "extracted"
         assert download.call_args.args[0] == MIRROR_URL

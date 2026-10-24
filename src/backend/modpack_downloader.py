@@ -50,6 +50,7 @@ from backend.fileops import (
     raise_if_no_space,
 )
 from backend.modinfo import find_modinfo, parse_modinfo
+from backend.archive_extractor import ARCHIVE_SUFFIXES, ArchiveFormatError, extract_archive, archive_is_complete
 
 USER_AGENT = "mod-manager/1.0 (+7 Days to Die mod manager)"
 REQUEST_TIMEOUT = 20
@@ -145,7 +146,7 @@ def detect_source_kind(url: str) -> DownloadSourceKind:
     # ma dodatkowo eksport ZIP z Git Items API, gdzie format ZIP jest
     # określony parametrem $format=zip, a ścieżka nie kończy się na .zip.
     bare = re.split(r"[?#]", url, maxsplit=1)[0]
-    if bare.lower().endswith(".zip") or _is_azure_items_zip_url(url):
+    if Path(bare).suffix.lower() in ARCHIVE_SUFFIXES or _is_azure_items_zip_url(url):
         return DownloadSourceKind.DIRECT_ZIP
     if _GITHUB_RELEASES_RE.match(url):
         return DownloadSourceKind.GITHUB_RELEASES
@@ -164,7 +165,7 @@ def source_kind_label(kind: DownloadSourceKind) -> str:
     return {
         DownloadSourceKind.GIT_REPO: i18n_message("download.source.git"),
         DownloadSourceKind.GITHUB_RELEASES: i18n_message("download.source.github"),
-        DownloadSourceKind.DIRECT_ZIP: i18n_message("download.source.zip"),
+        DownloadSourceKind.DIRECT_ZIP: i18n_message("download.source.archive"),
         DownloadSourceKind.UNDEAD_LEGACY_MIRROR: i18n_message("download.source.zip"),
     }.get(kind, i18n_message("download.source.unknown"))
 
@@ -282,7 +283,15 @@ def _zip_already_complete(zip_path: Path) -> bool:
     ściągać go drugi raz - to ratuje ponowne pobieranie 7,5 GB po błędzie
     wypakowywania (np. braku miejsca)."""
     try:
-        return zip_path.is_file() and zipfile.is_zipfile(zip_path)
+        if not zip_path.is_file():
+            return False
+        if zipfile.is_zipfile(zip_path):
+            return True
+        if zip_path.suffix.lower() in {".7z", ".rar"}:
+            # Inaczej niż is_zipfile: walidujemy cały strumień libarchive,
+            # żeby nie wykorzystać pliku uciętego przy poprzedniej próbie.
+            return archive_is_complete(zip_path)
+        return False
     except OSError:
         return False
 
@@ -393,7 +402,7 @@ def _github_latest_release_asset_url(owner: str, repo: str) -> tuple[str, str]:
 
     for asset in data.get("assets", []) or []:
         name = str(asset.get("name", ""))
-        if name.lower().endswith(".zip"):
+        if Path(name).suffix.lower() in ARCHIVE_SUFFIXES:
             url = asset.get("browser_download_url")
             if url:
                 return url, tag_name
@@ -445,17 +454,19 @@ def download_and_extract(
         elif kind == DownloadSourceKind.GITHUB_RELEASES:
             owner, repo = _parse_github_releases_url(url)
             asset_url, release_name = _github_latest_release_asset_url(owner, repo)
-            zip_path = temp_dir / "release.zip"
+            suffix = Path(urlsplit(asset_url).path).suffix.lower()
+            zip_path = temp_dir / ("release" + (suffix if suffix in ARCHIVE_SUFFIXES else ".zip"))
             if not _zip_already_complete(zip_path):
                 _http_download_file(
                     asset_url, zip_path, progress_cb=progress_cb,
                     cancel_event=cancel_event, pause_event=pause_event,
                     label=i18n_message("download.mod.release", {"release": release_name}),
                 )
-            _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
+            extract_archive(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             zip_path.unlink(missing_ok=True)
         elif kind in (DownloadSourceKind.DIRECT_ZIP, DownloadSourceKind.UNDEAD_LEGACY_MIRROR):
-            zip_path = temp_dir / "download.zip"
+            suffix = Path(urlsplit(url).path).suffix.lower()
+            zip_path = temp_dir / ("download" + (suffix if suffix in ARCHIVE_SUFFIXES else ".zip"))
             resolved_url = url
             request_headers = None
             reuse_zip = _zip_already_complete(zip_path)
@@ -486,7 +497,7 @@ def download_and_extract(
                     request_headers=request_headers,
                     use_cookies=kind == DownloadSourceKind.UNDEAD_LEGACY_MIRROR,
                 )
-            _extract_zip(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
+            extract_archive(zip_path, extract_dir, progress_cb=progress_cb, cancel_event=cancel_event)
             # Undead Legacy keeps the original archive. The download manager
             # moves it to downloads/ after a successful installation so the
             # launcher's existing archive-cleanup setting remains authoritative.
@@ -501,6 +512,9 @@ def download_and_extract(
         # celowe: .part zostaje, niczego nie sprzątamy - wznowienie
         # kontynuuje z pobranymi bajtami
         raise
+    except ArchiveFormatError as exc:
+        shutil.rmtree(extract_dir, ignore_errors=True)
+        raise DownloadError(str(exc)) from exc
     except (DownloadError, InsufficientDiskSpace):
         # brak miejsca: sprzątamy częściowo wypakowane drzewo (zwalnia dysk),
         # a kompletny download.zip/.part zostaje - "Ponów" nie ściąga od zera

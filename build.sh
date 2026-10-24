@@ -96,11 +96,11 @@ ok "Środowisko .venv gotowe"
 # 3. version + build working directory
 # ----------------------------------------------------------------------------
 if [ -n "$NEW_VERSION" ]; then
-    # app_info.py is the single source of truth; keep README and the test in sync
+    # app_info.py is the single source of truth; keep README in sync.
+    # Version-related tests derive the value dynamically.
     sed -i "s/^APP_VERSION = \".*\"/APP_VERSION = \"$NEW_VERSION\"/" src/services/app_info.py
     sed -i "s/^\*\*Current version:\*\* .*/**Current version:** $NEW_VERSION  /" README.md
-    sed -i "s/assert APP_VERSION == \".*\"/assert APP_VERSION == \"$NEW_VERSION\"/" tests/test_app_info.py
-    ok "Wersja ustawiona na $NEW_VERSION (app_info.py, README.md, tests/test_app_info.py)"
+    ok "Wersja ustawiona na $NEW_VERSION (app_info.py, README.md)"
 fi
 VERSION="$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' src/services/app_info.py | head -1)"
 [ -n "$VERSION" ] || { fail "Nie udało się odczytać APP_VERSION"; exit 1; }
@@ -219,7 +219,7 @@ write_appdata() {  # AppStream metainfo (removes the appimagetool WARNING; versi
     pobieranie z 7daystodiemods.com oraz modpacków z repozytoriów Git,
     wydań GitHub i archiwów .zip, kopie zapasowe instancji.</p>
     <p>Aplikacja PySide6 + QML z wbudowanym środowiskiem Python - nie wymaga
-    zależności systemowych poza libc.</p>
+    systemowych zależności poza libc i libarchive.</p>
   </description>
   <launchable type="desktop-id">$APPSTREAM_ID.desktop</launchable>
   <url type="homepage">https://github.com/paffciostudio</url>
@@ -266,12 +266,13 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: $ARCH
+Depends: libarchive13t64 | libarchive13
 Installed-Size: $INSTALLED_KB
 Maintainer: 7DTD Mod Manager
 Description: Menedżer modów do 7 Days to Die
  Biblioteka modów z deduplikacją, izolowane instancje gry, pobieranie
  z 7daystodiemods.com i modpacki. Aplikacja PySide6 + QML z wbudowanym
- środowiskiem Python (nie wymaga zależności systemowych poza libc).
+ środowiskiem Python (wymaga też libarchive).
 EOF
 
 cat > "$DEB_STAGE/DEBIAN/postinst" <<'EOF'

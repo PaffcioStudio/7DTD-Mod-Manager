@@ -1066,9 +1066,8 @@ class SevenDaysModsClient:
                 return None
             name = _mediafire_filename_from_url(direct)
             # Nie pozwalamy później pobrać strony HTML pod błędnym odnośnikiem.
-            # MediaFire powinien wskazywać prawdziwe archiwum; końcówka .zip
-            # jest też potrzebna do obecnego walidatora instalacji.
-            if not name.lower().endswith(".zip"):
+            # MediaFire może hostować ZIP, 7z albo RAR.
+            if Path(name).suffix.lower() not in {".zip", ".7z", ".rar"}:
                 return None
             return direct, _mediafire_size_from_html(resp.text), name
 
