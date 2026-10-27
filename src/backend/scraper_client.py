@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
+from backend import google_drive_download as drive
+from backend.fileops import ensure_free_space, check_cancel, OperationCancelled
+
 import requests
 
 from backend.nuxtdata import build_all, extract_payload
@@ -675,6 +678,9 @@ class SevenDaysModsClient:
 
         if not mod.get("external_links"):
             fallback_urls = _extract_mediafire_share_urls_from_page(resp.text)
+            fallback_urls += list(dict.fromkeys(re.findall(
+                r'https://drive\.google\.com/file/d/[\w-]+/view(?:\?[^"\'<>\s]*)?',
+                html.unescape(resp.text).replace(r"\/", "/"))))
             if fallback_urls:
                 # Kopia, aby nie mutować współdzielonego obiektu z payloadu.
                 mod = dict(mod)
@@ -1046,6 +1052,20 @@ class SevenDaysModsClient:
           repo jako ZIP przez ``/-/archive/<default_branch>/...`` (domyślna
           gałąź z API v4; archiwa GitLab są generowane na locie, więc bez
           z góry znanej długości)."""
+        if drive.file_id(link.url):
+            # Resolve only metadata here; the streaming request handles confirmation
+            # using the same cookie session as the eventual archive transfer.
+            resp = self.session.get(link.url, timeout=self.timeout)
+            resp.raise_for_status()
+            match = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"', resp.text)
+            name = html.unescape(match[1]) if match else link.filename
+            if Path(name).suffix.lower() not in {".zip", ".7z", ".rar"}:
+                title = re.search(r"<title>(.*?)</title>", resp.text, re.S)
+                name = html.unescape(title[1].rsplit(" - ", 1)[0]) if title else name
+            if Path(name).suffix.lower() not in {".zip", ".7z", ".rar"}:
+                raise ValueError(i18n_message("download.drive.unavailable"))
+            return link.url, 0, Path(name.replace("\\", "/")).name
+
         if _is_mediafire_share_url(link.url):
             try:
                 resp = self.session.get(
@@ -1143,6 +1163,7 @@ class SevenDaysModsClient:
         progress: ProgressCallback | None = None,
         chunk_size: int = 1024 * 1024,
         max_retries: int = 8,
+        cancel_event=None,
         on_retry: Callable[[int, float, Exception], None] | None = None,
     ) -> Path:
         """Strumieniowo zapisuje plik z URL-a (np. podpisanego z R2).
@@ -1158,19 +1179,27 @@ class SevenDaysModsClient:
 
         attempt = 0
         while True:
+            check_cancel(cancel_event)
             offset = tmp.stat().st_size if tmp.exists() else 0
             headers = {"Range": f"bytes={offset}-"} if offset > 0 else {}
             try:
-                with self.session.get(
-                    url, stream=True, timeout=self.timeout, headers=headers
-                ) as resp:
+                response = (drive.open_download(self.session, url, headers=headers, timeout=self.timeout)
+                            if drive.file_id(url) else self.session.get(
+                                url, stream=True, timeout=self.timeout, headers=headers))
+                with response as resp:
                     if resp.status_code == 416 and offset > 0:
-                        # offset >= rozmiar pliku => .part był już kompletny
-                        tmp.rename(dest)
-                        return dest
+                        # A 416 is proof only if the server reports exactly our size.
+                        if resp.headers.get("Content-Range") == f"bytes */{offset}":
+                            tmp.replace(dest)
+                            return dest
+                        resp.raise_for_status()
                     resp.raise_for_status()
                     if resp.status_code == 206 and offset > 0:
-                        total = offset + int(resp.headers.get("Content-Length") or 0)
+                        content_range = resp.headers.get("Content-Range", "")
+                        match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+|\*)", content_range)
+                        if not match or int(match[1]) != offset:
+                            raise ValueError(i18n_message("download.error.invalidRange"))
+                        total = int(match[3]) if match[3] != "*" else offset + int(resp.headers.get("Content-Length") or 0)
                         mode = "ab"
                     else:
                         if offset > 0:  # serwer zignorował Range
@@ -1178,16 +1207,23 @@ class SevenDaysModsClient:
                         total = int(resp.headers.get("Content-Length") or 0)
                         mode = "wb"
 
+                    if "text/html" in resp.headers.get("Content-Type", "").lower():
+                        raise ValueError(i18n_message("download.error.htmlArchive"))
+                    if total:
+                        ensure_free_space(dest.parent, max(0, total - offset))
                     done = offset
                     with open(tmp, mode) as fh:
                         for chunk in resp.iter_content(chunk_size=chunk_size):
+                            check_cancel(cancel_event)
                             if not chunk:
                                 continue
                             fh.write(chunk)
                             done += len(chunk)
                             if progress:
                                 progress(done, total)
-                tmp.rename(dest)
+                    if total and done != total:
+                        raise requests.exceptions.ChunkedEncodingError("Incomplete response")
+                tmp.replace(dest)
                 return dest
             except (
                 requests.ConnectionError,
@@ -1200,7 +1236,10 @@ class SevenDaysModsClient:
                 delay = min(2 ** (attempt - 1), 15)
                 if on_retry:
                     on_retry(attempt, delay, exc)
-                time.sleep(delay)
+                if cancel_event is None:
+                    time.sleep(delay)
+                elif cancel_event.wait(delay):
+                    raise OperationCancelled(i18n_message("common.operationCancelled"))
 
     def download_mod_file(
         self,

@@ -596,6 +596,7 @@ class ProfileManager(QObject):
                 description=instance.description,
                 game_branch=instance.game_branch,
                 proton_path=instance.proton_path,
+                executable=instance.executable,
                 instances=self._instances,
             )
         except inst.InstanceError as exc:
@@ -691,6 +692,7 @@ class ProfileManager(QObject):
             "colorTag": profile.color_tag if profile else _COLOR_TAGS[0],
             "gameBranch": instance.game_branch,
             "protonPath": instance.proton_path,
+            "executable": instance.executable,
         }
 
     # ------------------------------------------------------------------ #
@@ -1019,10 +1021,11 @@ class ProfileManager(QObject):
 
     @Slot(str, str, str, str, bool, bool, bool, bool, str)
     @Slot(str, str, str, str, bool, bool, bool, bool, str, str)
+    @Slot(str, str, str, str, bool, bool, bool, bool, str, str, str)
     def updateInstance(self, profile_id: str, name: str, data_dir: str,
                        description: str, noeos: bool, noeac: bool,
                        skip_news_screen: bool, skip_intro: bool,
-                       game_branch: str = "", proton_path: str = "") -> None:
+                       game_branch: str = "", proton_path: str = "", executable: str = "") -> None:
         """Pełna edycja instancji (dialog edycji, Krok C): nazwa, opis,
         katalog danych i flagi - z walidacją jak przy tworzeniu."""
         if self._game.isRunning:
@@ -1049,11 +1052,19 @@ class ProfileManager(QObject):
         instance.flag_skip_intro = skip_intro
         instance.game_branch = (game_branch or "").strip()[:40]
         instance.proton_path = (proton_path or "").strip()
+        instance.executable = (executable or "").strip()
         self._save_registry()
         self._model.set_profiles(
             [self._to_profile(i, idx) for idx, i in enumerate(self._instances)], self._active_id)
         self.instancesChanged.emit()
         self._bus.toastKey("toast.instances.saved", {"name": instance.name}, "success")
+
+    @Slot(str, result="QVariantList")
+    def executableOptions(self, branch: str):
+        from backend.game_process import game_executables, _steam_game_dir
+        from backend.game_versions import versions_root, resolve_downloaded_branch
+        root = versions_root() / (resolve_downloaded_branch(branch) or branch) if branch else _steam_game_dir()
+        return [{"value": name, "label": name} for name in game_executables(root)] if root else []
 
     # ------------------------------------------------------------------ #
     def reset_demo(self) -> None:

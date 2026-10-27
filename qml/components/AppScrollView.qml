@@ -4,7 +4,7 @@ import "../theme"
 
 // Przewijana powierzchnia na Flickable (ScrollView nie eksponuje contentY
 // do animacji - NumberAnimation na jego aliasie pada z "Cannot animate
-// non-existent property"): ZAWSZE widoczny scrollbar + przyzwoity scroll
+// non-existent property"): pasek tylko przy nadmiarze treści + scroll
 // myszki (animowany krok ~96 px/klik), touchpad 1:1 piksele.
 // Użycie: ustaw contentWidth/contentHeight z zawartości, np.
 //     contentHeight: kolumna.implicitHeight
@@ -24,7 +24,7 @@ Flickable {
 
     ScrollBar.vertical: AppScrollBar {
         z: 5
-        policy: sv.showScrollBar ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        policy: sv.showScrollBar ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
         x: sv.width - width
         height: sv.height
     }

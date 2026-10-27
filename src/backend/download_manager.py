@@ -112,6 +112,24 @@ class DownloadProgressLimiter:
             self._emit(done, total, label)
 
 
+class WorkerCancellation:
+    """Combine explicit cancellation with application shutdown without deleting queue entries."""
+    def __init__(self, cancel, stop):
+        self.cancel, self.stop = cancel, stop
+
+    def is_set(self):
+        return self.cancel.is_set() or self.stop.is_set()
+
+    def wait(self, timeout):
+        deadline = time.monotonic() + timeout
+        while not self.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            self.stop.wait(min(0.1, remaining))
+        return True
+
+
 class DownloadItem:
     def __init__(self, kind: str, ref_id: str, title: str, subtitle: str,
                  total_bytes: int, progress: float = 0.0,
@@ -120,7 +138,7 @@ class DownloadItem:
                  url: str = "", flavor: str = "",
                  update_for: str | None = None,
                  chosen_file_ref: str = "",
-                 game_version: str = "") -> None:
+                 game_version: str = "", install_game: bool = False) -> None:
         self.id: str = uuid.uuid4().hex[:10]
         self.kind = kind                    # "update" | "catalog" | "url" | "mod"
         self.ref_id = ref_id
@@ -140,6 +158,7 @@ class DownloadItem:
         self.flavor = flavor                # "git" | "github" | "zip" | "mod"
         self.update_for = update_for        # library_id aktualizowanego wpisu (kind="update")
         self.chosen_file_ref = chosen_file_ref  # "hosted:<id>" / "external:<url>" (etap 13)
+        self.install_game = install_game
         self.game_version = game_version    # wersja gry modu wg katalogu (slug, "" = nieznana)
         self.temp_dir: Path | None = None
         self.restored_paused = False        # odtworzone z downloads.json jako pauza (brak żywego workera)
@@ -318,6 +337,7 @@ class DownloadListModel(QAbstractListModel):
 class DownloadManager(QObject):
     """Exposed to QML as ``Downloads``."""
 
+    missingGameVersion = Signal(str, str)  # confirmation token, required branch
     updateFinished = Signal(str)        # mod id
     activeCountChanged = Signal()
     completedCountChanged = Signal()
@@ -345,12 +365,18 @@ class DownloadManager(QObject):
         # common queue only mirrors its state, so game pause/resume/cancel
         # actions must be forwarded to that owner.
         self._game_versions = None
+        self._pending_requests = {}
+        self._allow_missing_branch = False
+        self._requested_game_branches = set()
         self._model = DownloadListModel(self)
         self._last_tick = time.monotonic()
         self._last_queue_json = ""
         self._multi_decisions: dict[str, dict] = {}   # item_id -> {event, choice}
         self._archive_busy = False
         self._archive_thread = None
+        self._workers = []
+        self._stop_event = threading.Event()
+        self._shutting_down = False
         self.archiveJobFinished.connect(self._on_archive_job_finished)
         self._cleanup_timer = QTimer(self)
         self._cleanup_timer.setInterval(60 * 60 * 1000)
@@ -464,7 +490,19 @@ class DownloadManager(QObject):
     # ------------------------------------------------------------------ #
     def shutdown(self) -> None:
         """Stop the simulation timer (used on app teardown)."""
-        self._persist_queue()   # pobierania w locie wrócą po restarcie
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self._persist_queue()
+        self._stop_event.set()
+        for item in self._model.items:
+            item.pause_event.set()
+        for decision in self._multi_decisions.values():
+            decision["choice"] = "cancel"
+            decision["event"].set()
+        deadline = time.monotonic() + 35
+        for worker in self._workers:
+            worker.join(timeout=max(0, deadline - time.monotonic()))
         self._timer.stop()
         self._cleanup_timer.stop()
         if self._archive_thread is not None:
@@ -499,23 +537,11 @@ class DownloadManager(QObject):
         self._emit_counts()
         self._game_versions.resume(item.ref_id)
 
-    # ------------------------------------------------------------------ #
-    # trwałość kolejki (etap 12) - wzorowane na starym mod_downloads.py:
-    # niezakończone pozycje (queued/downloading/paused) zapisywane przy
-    # KAŻDEJ zmianie stanu do downloads.json i odtwarzane na starcie;
-    # DONE/FAILED/CANCELLED nie są zapisywane - zamknięcie appki zapomina
-    # tylko to, co się zakończyło
-    # ------------------------------------------------------------------ #
+    # Persist both pending work and terminal history across restarts.
     def _persist_queue(self) -> None:
         records = []
         for item in self._model.items:
-            if not item.real or item.status in ("failed", "cancelled"):
-                continue
-            # Zakończone pobrania typu "mod" pozostają w kolejce jako
-            # historia, ale ich stan "Pobrano" nie może być traktowany jako
-            # dowód, że zawartość nadal istnieje. Instancję Overhaul można
-            # przecież usunąć z zakładki Instancje, pozostawiając wpis kolejki.
-            if item.status == "completed" and item.kind != "mod":
+            if not item.real:
                 continue
             records.append({
                 "kind": item.kind,
@@ -528,6 +554,7 @@ class DownloadManager(QObject):
                 "update_for": item.update_for,
                 "pausable": item.pausable,
                 "game_version": item.game_version,
+                "install_game": item.install_game,
                 "status": item.status,
                 "total_bytes": int(item.total_bytes or 0),
                 "downloaded": int(item.downloaded or 0),
@@ -555,8 +582,8 @@ class DownloadManager(QObject):
             if kind != "game" and not rec.get("url"):
                 continue
             saved_status = str(rec.get("status", "queued"))
-            if kind == "mod" and saved_status == "completed":
-                status = "completed"
+            if saved_status in ("completed", "failed", "cancelled"):
+                status = saved_status
             else:
                 status = "paused" if saved_status == "paused" else "queued"
             try:
@@ -582,6 +609,7 @@ class DownloadManager(QObject):
                 update_for=rec.get("update_for"),
                 chosen_file_ref=str(rec.get("chosen_file_ref") or ""),
                 game_version=required_game_branch(str(rec.get("game_version") or "")),
+                install_game=bool(rec.get("install_game", False)),
             )
             item.restored_from_queue = True
             if status == "paused":
@@ -604,7 +632,7 @@ class DownloadManager(QObject):
                     if part.exists():
                         item.downloaded = part.stat().st_size
                         break
-            elif item.kind == "url":
+            elif item.kind == "url" and status not in ("completed", "failed", "cancelled"):
                 item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-", dir=fs.staging_dir()))
             self._model.append(item)
             logger.info("Restored download queue item: %s (%s)", item.title, status)
@@ -632,6 +660,14 @@ class DownloadManager(QObject):
     @Property(int, notify=completedCountChanged)
     def completedCount(self) -> int:
         return sum(1 for i in self._model.items if i.status == "completed")
+
+    @Property(int, notify=completedCountChanged)
+    def historyCount(self) -> int:
+        return sum(i.status in ("completed", "failed", "cancelled") for i in self._model.items)
+
+    @Property(int, notify=completedCountChanged)
+    def failedCount(self) -> int:
+        return sum(i.status == "failed" for i in self._model.items)
 
     @Property(bool, notify=activeCountChanged)
     def hasActive(self) -> bool:
@@ -774,6 +810,8 @@ class DownloadManager(QObject):
             self._emit_counts()
 
     def _promote_queued(self) -> None:
+        if self._shutting_down:
+            return
         active = sum(1 for i in self._model.items if i.status == "downloading")
         for item in self._model.items:
             if active >= self._settings.maxConcurrentDownloads:
@@ -783,6 +821,20 @@ class DownloadManager(QObject):
                 # not by this HTTP/modpack worker pool. They are resumed
                 # explicitly after signal wiring during application startup.
                 if item.kind == "game":
+                    continue
+                if (item.real and item.game_version
+                        and not self._is_downloaded_game_version(item.game_version)):
+                    if self._game_versions is None:
+                        continue  # Wait until startup signal wiring is complete.
+                    branch = self._game_branch_for_download(item.game_version)
+                    if not item.install_game:
+                        self._on_url_state(item.id, "failed:" + i18n_message(
+                            "download.gameVersion.missing", {"branch": branch}))
+                        continue
+                    if (self._game_versions is not None and not self._game_versions.busy
+                            and branch not in self._requested_game_branches):
+                        self._requested_game_branches.add(branch)
+                        self._game_versions.download(branch)
                     continue
                 item.status = "downloading"
                 active += 1
@@ -955,9 +1007,23 @@ class DownloadManager(QObject):
     def retryAt(self, download_id: str) -> None:
         item = self._find(download_id)
         if item and item.status == "failed":
+            duplicate = any(other is not item and other.status in ("queued", "downloading", "paused")
+                            and other.kind == item.kind and other.ref_id.casefold() == item.ref_id.casefold()
+                            for other in self._model.items)
+            if duplicate:
+                self._bus.toastKey("toast.downloads.alreadyDownloadedOrQueued", {}, "info")
+                return
+            if self._allow_missing_branch:
+                item.install_game = True
+                item.game_version = self._game_branch_for_download(item.game_version)
             item.downloaded = 0
             item._progress_override = 0.0
             item.status = "queued"
+            if item.kind == "game":
+                if self._game_versions is not None:
+                    self._game_versions.resume(item.ref_id)
+                self._emit_counts()
+                return
             if item.real:
                 # .part zostaje - HTTP dociągnie resztę przez Range;
                 # nieudany git clone zacznie się od świeżego klonu
@@ -975,7 +1041,7 @@ class DownloadManager(QObject):
     @Slot()
     def clearCompleted(self) -> None:
         for item in list(self._model.items):
-            if item.status == "completed":
+            if item.status in ("completed", "failed", "cancelled"):
                 self._model.remove(item.id)
         self._emit_counts()
 
@@ -983,7 +1049,7 @@ class DownloadManager(QObject):
     def removeCompletedAt(self, download_id: str) -> None:
         """Usuń pojedynczy wpis z historii zakończonych pobrań."""
         item = self._find(download_id)
-        if item is None or item.status != "completed":
+        if item is None or item.status not in ("completed", "failed", "cancelled"):
             return
         self._model.remove(download_id)
         self._emit_counts()
@@ -993,6 +1059,8 @@ class DownloadManager(QObject):
     # ------------------------------------------------------------------ #
     @Slot(str, object)
     def startGameVersionDownload(self, branch: str, total_bytes: int = 0) -> None:
+        if self._shutting_down:
+            return
         # Depot size is a Python integer and may exceed 2 GiB; do not
         # let Qt coerce it to a 32-bit C++ int at the signal boundary.
         branch = (branch or "").strip()
@@ -1041,6 +1109,8 @@ class DownloadManager(QObject):
 
     @Slot(str, float, str)
     def updateGameVersionDownload(self, branch: str, percent: float, status: str) -> None:
+        if self._shutting_down:
+            return
         branch = (branch or "").strip()
         item = next((i for i in reversed(self._model.items)
                      if i.kind == "game" and i.ref_id == branch
@@ -1085,6 +1155,8 @@ class DownloadManager(QObject):
 
     @Slot(str, str, str)
     def finishGameVersionDownload(self, branch: str, state: str, message: str) -> None:
+        if self._shutting_down:
+            return
         branch = (branch or "").strip()
         item = next((i for i in reversed(self._model.items)
                      if i.kind == "game" and i.ref_id == branch
@@ -1135,16 +1207,17 @@ class DownloadManager(QObject):
     def _check_required_game_version(self, game_version: str, subject: str) -> str:
         """Return the concrete branch or raise before a mod/modpack download.
 
-        A selected catalog version is a hard compatibility requirement. The
-        launcher therefore refuses to start the network job until the matching
-        Windows game copy exists physically in game-versions/<branch>. An empty
-        version means the source did not provide a reliable requirement and is
-        intentionally allowed.
+        The matching Windows copy must exist before the mod worker starts.
+        Confirmation permits queuing a missing branch as a dependency; it does
+        not permit installing the mod against a different version. Empty means
+        that the source did not provide a reliable requirement.
         """
         required_branch = required_game_branch((game_version or "").strip())
         if not required_branch:
             return ""
         resolved = resolve_downloaded_branch(required_branch)
+        if not resolved and self._allow_missing_branch:
+            return self._game_branch_for_download(required_branch)
         if not resolved:
             raise modpack_downloader.DownloadError(
                 i18n_message("download.gameVersion.missing", {
@@ -1152,6 +1225,32 @@ class DownloadManager(QObject):
                 })
             )
         return resolved
+
+    def _game_branch_for_download(self, version: str) -> str:
+        from backend.game_versions import branch_sort_key
+        branch = required_game_branch(version)
+        choices = getattr(self._game_versions, "available", []) or []
+        if re.fullmatch(r"(?:v|alpha)\d+", branch):
+            candidates = [v["branch"] for v in choices if v.get("branch", "").startswith(branch + ".")]
+            if candidates:
+                return max(candidates, key=branch_sort_key)
+        return branch
+
+    def _ask_missing_game(self, branch: str, callback) -> None:
+        token = uuid.uuid4().hex
+        self._pending_requests[token] = callback
+        self.missingGameVersion.emit(token, self._game_branch_for_download(branch))
+
+    @Slot(str, bool)
+    def resolveMissingGame(self, token: str, accepted: bool) -> None:
+        callback = self._pending_requests.pop(token, None)
+        if not accepted or callback is None:
+            return
+        self._allow_missing_branch = True
+        try:
+            callback()
+        finally:
+            self._allow_missing_branch = False
 
     # ------------------------------------------------------------------ #
     # real URL downloads (migration stage 5)
@@ -1189,8 +1288,8 @@ class DownloadManager(QObject):
         game_version = (game_version or "").strip()
         try:
             required_branch = self._check_required_game_version(game_version, "Overhaul")
-        except modpack_downloader.DownloadError as exc:
-            self._bus.toastKey("common.operationFailed", {"error": str(exc)}, "warning")
+        except modpack_downloader.DownloadError:
+            self._ask_missing_game(game_version, lambda: self.startUrlDownloadNamed(url, title, game_version))
             return
         for item in self._model.items:
             if item.real and item.url == url \
@@ -1221,7 +1320,8 @@ class DownloadManager(QObject):
             pausable=(flavor != "git"),
             url=url,
             flavor=flavor,
-            game_version=game_version,
+            game_version=required_branch or game_version,
+            install_game=self._allow_missing_branch,
         )
         item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-", dir=fs.staging_dir()))
         self._model.append(item)
@@ -1255,8 +1355,8 @@ class DownloadManager(QObject):
         game_version = (game_version or "").strip()
         try:
             required_branch = self._check_required_game_version(game_version, "Mod")
-        except modpack_downloader.DownloadError as exc:
-            self._bus.toastKey("common.operationFailed", {"error": str(exc)}, "warning")
+        except modpack_downloader.DownloadError:
+            self._ask_missing_game(game_version, lambda: self.startModDownloadWithVersion(raw, game_version))
             return
         try:
             slug = parse_mod_url(raw)
@@ -1295,6 +1395,7 @@ class DownloadManager(QObject):
             url=raw,
             flavor="mod",
             game_version=required_branch or game_version,
+            install_game=self._allow_missing_branch,
         )
         self._model.append(item)
         self._persist_queue()
@@ -1324,8 +1425,8 @@ class DownloadManager(QObject):
         game_version = (game_version or "").strip()
         try:
             required_branch = self._check_required_game_version(game_version, "Mod")
-        except modpack_downloader.DownloadError as exc:
-            self._bus.toastKey("common.operationFailed", {"error": str(exc)}, "warning")
+        except modpack_downloader.DownloadError:
+            self._ask_missing_game(game_version, lambda: self._startModDownloadWithFile(raw, file_ref, game_version))
             return
         try:
             slug_norm = parse_mod_url(raw)
@@ -1353,6 +1454,7 @@ class DownloadManager(QObject):
             flavor="mod",
             chosen_file_ref=file_ref,
             game_version=required_branch or game_version,
+            install_game=self._allow_missing_branch,
         )
         self._model.append(item)
         self._persist_queue()
@@ -1475,7 +1577,7 @@ class DownloadManager(QObject):
         return link if len(declared) == 1 else None
 
     def _start_mod_worker(self, item: DownloadItem) -> None:
-        cancel = item.cancel_event
+        cancel = WorkerCancellation(item.cancel_event, self._stop_event)
         pause = item.pause_event
         client = SevenDaysModsClient()
         emit_progress = DownloadProgressLimiter(
@@ -1694,6 +1796,7 @@ class DownloadManager(QObject):
                             raise modpack_downloader.DownloadError(
                                 i18n_message("download.mod.unsupportedLink"))
                         download_url, _sz, ext_name = resolved
+                    ext_name = Path(ext_name.replace("\\", "/")).name
                     dest = fs.downloads_dir() / f"{info.slug}-{version}-{ext_name}"
                 elif main_file is not None:
                     self.modMeta.emit(item.id, info.title, subtitle,
@@ -1714,9 +1817,10 @@ class DownloadManager(QObject):
                     download_url, ext_size, filename = resolved
                     if ext_size > 0:
                         self.modMeta.emit(item.id, "", "", ext_size)
+                    filename = Path(filename.replace("\\", "/")).name
                     dest = fs.downloads_dir() / f"{info.slug}-{version}-{filename}"
 
-                if dest.exists():
+                if modpack_downloader._zip_already_complete(dest):
                     # D9: transfer jest limitowany - archiwum już na dysku,
                     # więc pobierania nie powtarzamy
                     progress(dest.stat().st_size, max(1, dest.stat().st_size))
@@ -1726,11 +1830,13 @@ class DownloadManager(QObject):
                             info.id, main_file.id)
                     while True:
                         try:
-                            client.download_to(download_url, dest, progress=progress)
+                            client.download_to(download_url, dest, progress=progress, cancel_event=cancel)
                             break
                         except modpack_downloader.DownloadPaused:
                             self.urlState.emit(item.id, "paused")
                             while pause.is_set() and not cancel.is_set():
+                                if self._shutting_down:
+                                    return
                                 time.sleep(0.1)
                             if cancel.is_set():
                                 raise OperationCancelled(i18n_message("common.operationCancelled"))
@@ -1885,6 +1991,8 @@ class DownloadManager(QObject):
                 item.temp_dir = None
                 self.urlState.emit(item.id, "completed:" + "; ".join(parts))
             except OperationCancelled:
+                if self._shutting_down:
+                    return
                 install_log.info("MOD download cancelled: %s", item.url)
                 self.urlState.emit(item.id, "cancelled")
             except Exception as exc:  # noqa: BLE001 - błąd trafia na kartę + toast
@@ -1899,12 +2007,14 @@ class DownloadManager(QObject):
             with downloads_cleanup.archive_use():
                 worker()
 
-        threading.Thread(target=protected_worker, daemon=True).start()
+        thread = threading.Thread(target=protected_worker, daemon=True)
+        self._workers.append(thread)
+        thread.start()
 
     def _on_mod_meta(self, item_id: str, title: str, subtitle: str,
                      total: int) -> None:
         item = self._find(item_id)
-        if item is None:
+        if self._shutting_down or item is None:
             return
         if title:
             item.title = title
@@ -2087,7 +2197,7 @@ class DownloadManager(QObject):
 
     def _start_url_worker(self, item: DownloadItem) -> None:
         """Odpala wątek roboczy dla pozycji URL (promowanej z kolejki)."""
-        cancel, pause = item.cancel_event, item.pause_event
+        cancel, pause = WorkerCancellation(item.cancel_event, self._stop_event), item.pause_event
         temp_dir = item.temp_dir
         emit_progress = DownloadProgressLimiter(
             lambda done, total, label: self.urlProgress.emit(item.id, done, total, label))
@@ -2127,6 +2237,8 @@ class DownloadManager(QObject):
                         install_log.info("URL download paused: %s", item.url)
                         self.urlState.emit(item.id, "paused")
                         while pause.is_set() and not cancel.is_set():
+                            if self._shutting_down:
+                                return
                             time.sleep(0.1)
                         if cancel.is_set():
                             raise OperationCancelled(i18n_message("common.operationCancelled"))
@@ -2208,6 +2320,8 @@ class DownloadManager(QObject):
                     }))
                 self.urlState.emit(item.id, "completed:" + "; ".join(parts))
             except OperationCancelled:
+                if self._shutting_down:
+                    return
                 install_log.info("URL download cancelled: %s", item.url)
                 self.urlState.emit(item.id, "cancelled")
             except Exception as exc:  # noqa: BLE001 - błąd trafia na kartę + toast
@@ -2215,11 +2329,13 @@ class DownloadManager(QObject):
                 logger.exception("URL download failed")
                 self.urlState.emit(item.id, f"failed:{exc}")
 
-        threading.Thread(target=worker, daemon=True).start()
+        thread = threading.Thread(target=worker, daemon=True)
+        self._workers.append(thread)
+        thread.start()
 
     def _on_url_progress(self, item_id: str, done: int, total: int, label: str) -> None:
         item = self._find(item_id)
-        if item is None:
+        if self._shutting_down or item is None:
             return
 
         # Progress callback jest używany zarówno do transferu bajtów, jak i
@@ -2260,7 +2376,7 @@ class DownloadManager(QObject):
 
     def _on_url_state(self, item_id: str, state: str) -> None:
         item = self._find(item_id)
-        if item is None:
+        if self._shutting_down or item is None:
             return
         if state == "paused":
             item.status = "paused"
@@ -2301,4 +2417,11 @@ class DownloadManager(QObject):
             item.subtitle = state.split(":", 1)[1]
             self._model.touch_all()
             self._emit_counts()
+            if item.subtitle.startswith("__I18N__:download.gameVersion.missing|"):
+                try:
+                    branch = json.loads(item.subtitle.split("|", 1)[1])["branch"]
+                    item.game_version = branch
+                    self._ask_missing_game(branch, lambda: self.retryAt(item.id))
+                except (ValueError, KeyError):
+                    pass
             self._bus.toastKey("toast.downloads.failed", {"title": item.title or item.subtitle}, "error")

@@ -3,6 +3,17 @@
 // Central UI catalogs. Keep keys stable and add new screens in small migration stages.
 
 var pl = {
+    "appUpdate.invalidTitle": "Tytuł wydania nie zawiera poprawnego numeru wersji.",
+    "downloads.control.removeHistory": "Usuń wpis z historii",
+    "instances.executable.label": "Plik uruchamiany",
+    "instances.executable.default": "Domyślnie (7DaysToDie.exe)",
+    "download.gameVersion.confirmTitle": "Brak wersji gry",
+    "download.gameVersion.confirmMessage": "Wersja {branch} nie jest zainstalowana. Pobrać ją razem z modem? Mod poczeka w kolejce na instalację gry. Pobieranie ze Steam może wymagać zalogowania.",
+    "download.gameVersion.confirmAction": "Pobierz grę i mod",
+    "download.drive.unavailable": "Google Drive nie udostępnił pliku. Sprawdź uprawnienia, limit pobrań i dostępność w przeglądarce.",
+    "download.error.invalidRange": "Serwer zwrócił nieprawidłowy zakres danych. Zachowano plik częściowy.",
+    "download.error.htmlArchive": "Serwer zwrócił stronę WWW zamiast archiwum. Sprawdź link w przeglądarce.",
+    "download.error.incomplete": "Połączenie zakończyło się przed pobraniem całego pliku. Ponów, aby wznowić.",
     "instances.playtime.total": "Łączny czas gry",
     "instances.playtime.libraryTotal": "Łącznie we wszystkich instancjach",
     "instances.playtime.playedCount": "Grano: {played} / {total}",
@@ -1087,6 +1098,17 @@ var pl = {
 }
 
 var en = {
+    "appUpdate.invalidTitle": "The release title does not contain a valid version number.",
+    "downloads.control.removeHistory": "Remove history entry",
+    "instances.executable.label": "Game executable",
+    "instances.executable.default": "Default (7DaysToDie.exe)",
+    "download.gameVersion.confirmTitle": "Game version required",
+    "download.gameVersion.confirmMessage": "Version {branch} is not installed. Download it together with the mod? The mod will wait in the queue until the game is installed. Steam may require sign-in.",
+    "download.gameVersion.confirmAction": "Download game and mod",
+    "download.drive.unavailable": "Google Drive did not provide the file. Check sharing permissions, download quota and availability in your browser.",
+    "download.error.invalidRange": "The server returned an invalid byte range. The partial file was preserved.",
+    "download.error.htmlArchive": "The server returned a web page instead of an archive. Check the link in your browser.",
+    "download.error.incomplete": "The connection ended before the entire file arrived. Retry to resume.",
     "instances.playtime.total": "Total playtime",
     "instances.playtime.libraryTotal": "Total across all instances",
     "instances.playtime.playedCount": "Played: {played} / {total}",

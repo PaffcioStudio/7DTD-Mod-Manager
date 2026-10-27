@@ -107,6 +107,7 @@ class Instance:
     # ulubiona instancja: zawsze pokazywana na górze i chroniona przed usunięciem
     favorite: bool = False
     proton_path: str = ""  # empty = automatic selection
+    executable: str = ""
 
     @property
     def is_default(self) -> bool:
@@ -188,6 +189,7 @@ def _instance_to_dict(instance: Instance) -> dict:
         "game_branch": instance.game_branch,
         "favorite": instance.favorite,
         "proton_path": instance.proton_path,
+        "executable": instance.executable,
     }
 
 
@@ -217,6 +219,7 @@ def _instance_from_dict(item: dict) -> Instance:
         game_branch=game_branch,
         favorite=bool(item.get("favorite", False)),
         proton_path=str(item.get("proton_path", "") or ""),
+        executable=str(item.get("executable", "") or ""),
     )
 
 
@@ -365,6 +368,7 @@ def create_instance(
     description: str = "",
     game_branch: str = "",
     proton_path: str = "",
+    executable: str = "",
     instances: list[Instance] | None = None,
     from_datetime=None,
 ) -> Instance:
@@ -390,6 +394,7 @@ def create_instance(
         description=description,
         game_branch=(game_branch or "").strip()[:40],
         proton_path=(proton_path or "").strip(),
+        executable=(executable or "").strip(),
         created_at=now().isoformat(timespec="seconds"),
     )
 
@@ -475,6 +480,8 @@ def launch_instance_via_steam(instance: Instance) -> bool:
         skip_intro=instance.flag_skip_intro,
         game_branch=instance.game_branch,
         proton_path=instance.proton_path,
+        executable=instance.executable,
+        instance_id="" if instance.is_default else instance.instance_id,
     )
 
 

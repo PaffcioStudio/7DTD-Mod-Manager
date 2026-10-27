@@ -6,6 +6,9 @@ import "../theme"
 ScrollBar {
     id: control
 
+    policy: ScrollBar.AsNeeded
+    visible: policy !== ScrollBar.AlwaysOff && size < 1.0
+
     implicitWidth: 10
     implicitHeight: 10
 

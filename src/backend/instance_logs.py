@@ -15,7 +15,9 @@ def collect_logs(instance) -> list[dict]:
     manager = game_process._manager_data_root()
     data = instance.data_path or Path.home() / '.local' / 'share' / '7DaysToDie'
     roots = [(data / 'BacktraceLogs', 'game'), (data / 'logs', 'instance'), (manager / 'logs', 'manager')]
-    prefixes = [manager / 'compatdata' / (instance.game_branch or 'steam') / 'pfx']
+    prefixes = [game_process.instance_compat_root(instance.game_branch or 'steam',
+                '' if instance.is_default else instance.instance_id) / 'pfx',
+                manager / 'compatdata' / (instance.game_branch or 'steam') / 'pfx']
     if not instance.game_branch:
         prefixes.extend(root / 'steamapps' / 'compatdata' / game_process.STEAM_APP_ID / 'pfx'
                         for root in game_process._steam_library_roots())

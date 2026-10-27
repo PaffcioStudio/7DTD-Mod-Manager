@@ -23,6 +23,7 @@ class TestDownloadedGameLaunch(unittest.TestCase):
             game_dir = root / "game-versions" / "alpha12.5"
             game_dir.mkdir(parents=True)
             (game_dir / "7DaysToDie.exe").write_bytes(b"MZ")
+            (game_dir / "7DaysToDie_EAC.exe").write_bytes(b"MZ")
             (game_dir / "steam_appid.txt").write_text("251570", encoding="utf-8")
             game_mod = game_dir / "Mods" / "0_TFP_Harmony"
             pack_mod = root / "instance-data" / "Mods" / "pack-harmony"
@@ -91,6 +92,8 @@ class TestDownloadedGameLaunch(unittest.TestCase):
                 f'-UserDataFolder=Z:{root / "instance-data"}', captured["command"]
             )
             self.assertIn("-skipintro", captured["command"])
+            self.assertIn("-logfile", captured["command"])
+            self.assertIn("/logs/game-", captured["command"][captured["command"].index("-logfile") + 1])
             env = captured["kwargs"]["env"]
             self.assertEqual(env["STEAM_COMPAT_CLIENT_INSTALL_PATH"], str(steam_client_root))
             self.assertEqual(env["STEAM_COMPAT_LIBRARY_PATHS"], str(steam_root))

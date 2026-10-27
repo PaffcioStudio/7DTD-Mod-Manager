@@ -74,6 +74,8 @@ class _FakeResponse(io.BytesIO):
     def __init__(self, payload=b"", content_length=None, code=200):
         super().__init__(payload)
         self.headers = {"Content-Length": str(content_length if content_length is not None else len(payload))}
+        if code == 206:
+            self.headers["Content-Range"] = "bytes 10-14/15"
         self._code = code
 
     def getcode(self):

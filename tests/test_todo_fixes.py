@@ -764,6 +764,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = __import__('backend.download_manager', fromlist=['DownloadListModel']).DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         manager = GameVersionsManager()
@@ -806,6 +807,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         manager = GameVersionsManager()
@@ -835,6 +837,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = type("Bus", (), {"toast": lambda *args, **kwargs: None, "toastKey": lambda *args, **kwargs: None})()
 
@@ -857,6 +860,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         downloads.startGameVersionDownload("alpha21.2", 100)
@@ -879,6 +883,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         class Owner:
@@ -906,6 +911,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         class Owner:
@@ -936,6 +942,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         QObject.__init__(downloads)
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
+        downloads._shutting_down = False
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = type("Bus", (), {"toast": lambda *args, **kwargs: None, "toastKey": lambda *args, **kwargs: None})()
         downloads.startGameVersionDownload("public", 100)

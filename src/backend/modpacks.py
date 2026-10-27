@@ -51,6 +51,8 @@ class BackupRecord:
     updated_at: str = ""
     item_count: int = 0
     size_bytes: int = 0
+    proton_path: str = ""
+    executable: str = ""
 
 
 def _read_payload() -> dict:
@@ -73,6 +75,8 @@ def load_backups() -> list[BackupRecord]:
                 path=str(item.get("path", "")),
                 description=str(item.get("description", "")),
                 game_branch=str(item.get("game_branch", "")),
+                proton_path=str(item.get("proton_path", "")),
+                executable=str(item.get("executable", "")),
                 created_at=str(item.get("created_at", "")),
                 updated_at=str(item.get("updated_at", "")),
                 item_count=int(item.get("item_count", 0)),
@@ -92,6 +96,8 @@ def save_backups(records: list[BackupRecord]) -> None:
                 "path": r.path,
                 "description": r.description,
                 "game_branch": r.game_branch,
+                "proton_path": r.proton_path,
+                "executable": r.executable,
                 "created_at": r.created_at,
                 "updated_at": r.updated_at,
                 "item_count": r.item_count,
@@ -197,6 +203,8 @@ def create_backup_from_instance(
             "skip_intro": instance.flag_skip_intro,
         },
         game_branch=str(instance.game_branch or ""),
+        proton_path=instance.proton_path,
+        executable=instance.executable,
         path=str(dest),
         created_at=datetime.now().isoformat(timespec="seconds"),
         updated_at=datetime.now().isoformat(timespec="seconds"),
@@ -273,6 +281,8 @@ def restore_backup(record: BackupRecord, *,
             created_at=record.created_at,
             description=record.description,
             game_branch=record.game_branch,
+            proton_path=record.proton_path,
+            executable=record.executable,
         )
         instances.append(target)
         inst_mod.save_instances(instances)

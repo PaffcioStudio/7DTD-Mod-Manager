@@ -196,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = SettingsService(persist=not bool(args.screenshot))
     if args.language:
         settings.set_session_language(args.language)
+    app.aboutToQuit.connect(settings.flush)
     setup_logging(settings)
     try:
         from services import tree_check
@@ -277,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
     # było aktywne przy zamknięciu poprzedniej sesji. Ręcznie zapauzowane
     # pozycje pozostają w stanie paused i czekają na Wznów.
     QTimer.singleShot(0, downloads.resumeRestoredGameDownloads)
+    if not args.screenshot:
+        QTimer.singleShot(0, game_versions.refreshAvailable)
 
     # first run: try to detect the game quietly
     if not settings.gameExecutable:
@@ -354,9 +357,9 @@ def main(argv: list[str] | None = None) -> int:
                 logger.error("Screenshot failed: Proton catalog did not finish loading")
                 app.exit(2)
                 return
-            protons.shutdown()
-            game_versions.shutdown()
             downloads.shutdown()
+            game_versions.shutdown()
+            protons.shutdown()
             image = window.grabWindow()
             ok = image.save(str(out_path))
             logger.info("Screenshot %s -> %s", "saved" if ok else "FAILED", out_path)
@@ -365,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         QTimer.singleShot(max(200, args.wait), capture)
 
     code = app.exec()
+    downloads.shutdown()
     protons.shutdown()
     # GameVersionsManager owns real DepotDownloader child processes and a worker
     # thread. It must be shut down explicitly, otherwise app.quit()/Ctrl+C can

@@ -35,7 +35,9 @@ import urllib.error
 import urllib.request
 from services.i18n_message import message as i18n_message
 from backend.undead_legacy import MIRROR_URL
+from backend import google_drive_download as drive
 import zipfile
+import zlib
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -146,7 +148,7 @@ def detect_source_kind(url: str) -> DownloadSourceKind:
     # ma dodatkowo eksport ZIP z Git Items API, gdzie format ZIP jest
     # określony parametrem $format=zip, a ścieżka nie kończy się na .zip.
     bare = re.split(r"[?#]", url, maxsplit=1)[0]
-    if Path(bare).suffix.lower() in ARCHIVE_SUFFIXES or _is_azure_items_zip_url(url):
+    if Path(bare).suffix.lower() in ARCHIVE_SUFFIXES or _is_azure_items_zip_url(url) or drive.file_id(url):
         return DownloadSourceKind.DIRECT_ZIP
     if _GITHUB_RELEASES_RE.match(url):
         return DownloadSourceKind.GITHUB_RELEASES
@@ -203,6 +205,16 @@ def _http_download_file(
     dropbox.com -> dropboxusercontent.com) idzie jedną sesją z cookie jar.
     Podpisany link dropboxusercontent jest związany z sesją i działa raz,
     więc nie wolno go „rozwiązać” osobnym requestem i dopiero potem pobrać."""
+    if drive.file_id(url):
+        from backend.scraper_client import SevenDaysModsClient
+        def progress(done, total):
+            check_cancel(cancel_event)
+            if pause_event is not None and pause_event.is_set():
+                raise DownloadPaused(label)
+            if progress_cb:
+                progress_cb(done, total, label)
+        SevenDaysModsClient().download_to(url, dest, progress=progress, cancel_event=cancel_event)
+        return
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
     downloaded = part.stat().st_size if part.exists() else 0
@@ -231,11 +243,17 @@ def _http_download_file(
         with resp:
             code = resp.getcode()
             resumed = code == 206 and downloaded > 0
+            if resumed:
+                match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+|\*)", resp.headers.get("Content-Range", ""))
+                if not match or int(match[1]) != downloaded:
+                    raise DownloadError(i18n_message("download.error.invalidRange"))
+            if "text/html" in resp.headers.get("Content-Type", "").lower():
+                raise DownloadError(i18n_message("download.error.htmlArchive"))
             if not resumed:
                 downloaded = 0
             total_size = int(resp.headers.get("Content-Length", 0) or 0)
             if resumed:
-                total_size += downloaded
+                total_size = int(match[3]) if match[3] != "*" else total_size + downloaded
 
             # Zanim ruszy transfer wielu GB: sprawdź, czy dysk w ogóle
             # pomieści resztę pliku (przy wznowieniu liczymy tylko brakujące
@@ -269,7 +287,8 @@ def _http_download_file(
                         else:
                             progress_cb(downloaded, downloaded + _CHUNK_SIZE, text)
 
-        # wyszliśmy z bloku resp bez pauzy/anulowania -> plik kompletny
+        if total_size and downloaded != total_size:
+            raise DownloadError(i18n_message("download.error.incomplete"))
         part.replace(dest)
         return
 
@@ -286,13 +305,15 @@ def _zip_already_complete(zip_path: Path) -> bool:
         if not zip_path.is_file():
             return False
         if zipfile.is_zipfile(zip_path):
-            return True
-        if zip_path.suffix.lower() in {".7z", ".rar"}:
+            with zipfile.ZipFile(zip_path) as archive:
+                return archive.testzip() is None
+        from backend.archive_extractor import has_compressed_archive_signature
+        if has_compressed_archive_signature(zip_path):
             # Inaczej niż is_zipfile: walidujemy cały strumień libarchive,
             # żeby nie wykorzystać pliku uciętego przy poprzedniej próbie.
             return archive_is_complete(zip_path)
         return False
-    except OSError:
+    except (OSError, zipfile.BadZipFile, RuntimeError, zlib.error):
         return False
 
 

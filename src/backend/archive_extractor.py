@@ -167,6 +167,12 @@ def extract_libarchive(archive: Path, destination: Path, *, progress_cb=None, ca
         raise ArchiveFormatError(i18n_message("download.mod.invalidArchive"))
 
 
+def has_compressed_archive_signature(path: Path) -> bool:
+    with path.open("rb") as source:
+        header = source.read(8)
+    return header.startswith((b"7z\xbc\xaf\x27\x1c", b"Rar!\x1a\x07"))
+
+
 def extract_archive(archive: Path, destination: Path, *, progress_cb=None, cancel_event=None) -> None:
     """Wybierz backend ekstrakcji na podstawie rzeczywistego formatu pliku."""
     import zipfile
@@ -175,7 +181,7 @@ def extract_archive(archive: Path, destination: Path, *, progress_cb=None, cance
         from backend.modpack_downloader import _extract_zip
         _extract_zip(archive, destination, progress_cb=progress_cb, cancel_event=cancel_event)
         return
-    if archive.suffix.lower() not in {".7z", ".rar"}:
+    if not has_compressed_archive_signature(archive):
         raise ArchiveFormatError(i18n_message("download.mod.invalidArchive"))
     try:
         extract_libarchive(archive, destination, progress_cb=progress_cb, cancel_event=cancel_event)
@@ -190,10 +196,15 @@ def archive_is_complete(archive: Path) -> bool:
     try:
         lib = _libarchive()
         seen = False
+        buffer = ctypes.create_string_buffer(CHUNK)
         for reader, _ in _entries(lib, archive):
             seen = True
-            if lib.archive_read_data_skip(reader) < 0:
-                return False
+            while True:
+                count = lib.archive_read_data(reader, buffer, CHUNK)
+                if count == 0:
+                    break
+                if count < 0:
+                    return False
         return seen
     except (ArchiveFormatError, OSError):
         return False

@@ -104,6 +104,8 @@ PageShell {
         editorBranch.value = d.gameBranch || ""
         Protons.refreshInstalled()
         editorProton.value = d.protonPath || ""
+        editorExecutable.value = d.executable || ""
+        GameVersions.refreshAvailable()
         noeosCheck.checked = d.noeos === true
         noeacCheck.checked = d.noeac === true
         skipNewsCheck.checked = d.skipNewsScreen === true
@@ -127,6 +129,8 @@ PageShell {
         editorBranch.value = ""
         Protons.refreshInstalled()
         editorProton.value = ""
+        editorExecutable.value = ""
+        GameVersions.refreshAvailable()
         noeosCheck.checked = true
         noeacCheck.checked = false
         skipNewsCheck.checked = true
@@ -145,7 +149,7 @@ PageShell {
                                     editorDataDir.text.trim(), editorDesc.text.trim(),
                                     noeosCheck.checked, noeacCheck.checked,
                                     skipNewsCheck.checked, skipIntroCheck.checked,
-                                    editorBranch.value, editorProton.value)
+                                    editorBranch.value, editorProton.value, editorExecutable.value)
             editorModal.close()
             return
         }
@@ -708,7 +712,7 @@ PageShell {
                             DropdownButton {
                                 Layout.fillWidth: true
                                 options: [{ value: "", label: I18n.t("instances.gameVersion.default") }]
-                                         .concat(GameVersions.versions.map(function (v) {
+                                         .concat(GameVersions.branchChoices.map(function (v) {
                                              var gb = v.size_bytes > 0
                                                       ? (v.size_bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB"
                                                       : ""
@@ -723,6 +727,20 @@ PageShell {
                                 color: Theme.textMuted
                                 font.pixelSize: Typography.micro
                                 font.family: Theme.fontFamily
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            visible: !editorModal.isNew
+                            Text { text: I18n.t("instances.executable.label"); color: Theme.textMuted; font.pixelSize: Typography.caption; font.family: Theme.fontFamily }
+                            DropdownButton {
+                                Layout.fillWidth: true
+                                options: [{value: "", label: I18n.t("instances.executable.default")}]
+                                    .concat(Profiles.executableOptions(editorBranch.value))
+                                    .concat(editorExecutable.value !== "" && !Profiles.executableOptions(editorBranch.value).some(e => e.value === editorExecutable.value)
+                                        ? [{value: editorExecutable.value, label: editorExecutable.value}] : [])
+                                value: editorExecutable.value
+                                onPicked: value => editorExecutable.value = value
                             }
                         }
                         ColumnLayout {
@@ -1173,7 +1191,7 @@ PageShell {
                         flickDeceleration: 5200
                         maximumFlickVelocity: 1800
                         ScrollBar.vertical: AppScrollBar {
-                            policy: ScrollBar.AlwaysOn
+                            policy: ScrollBar.AsNeeded
                         }
 
                         WheelHandler {
@@ -1390,6 +1408,7 @@ PageShell {
     Item { id: skipNewsCheck; property bool checked: false }
     Item { id: skipIntroCheck; property bool checked: false }
     InstanceLogsModal { id: logsModal }
+    Item { id: editorExecutable; property string value: "" }
     Item { id: editorProton; property string value: "" }
     Item { id: editorBranch; property string value: "" }
 

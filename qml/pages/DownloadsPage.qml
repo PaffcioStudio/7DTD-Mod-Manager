@@ -21,192 +21,198 @@ PageShell {
         urlField.text = ""
     }
 
-    ColumnLayout {
+    AppScrollView {
+        id: downloadsScroll
         anchors.fill: parent
         anchors.margins: Dimensions.pagePad
-        anchors.topMargin: Dimensions.spacingLg
-        spacing: Dimensions.spacingXl
+        contentHeight: downloadsColumn.implicitHeight
+
+        ColumnLayout {
+            id: downloadsColumn
+            width: downloadsScroll.contentWidth
+            spacing: Dimensions.spacingXl
 
 
-        RowLayout {
-            Layout.fillWidth: true
-
-            Item { Layout.fillWidth: true }
-
-            SecondaryButton {
-                text: I18n.t("downloads.clearCompleted")
-                icon: "x"
-                visible: Downloads.completedCount > 0
-                onClicked: Downloads.clearCompleted()
-            }
-        }
-
-        // ---- URL download (migration stage 5) -------------------------- #
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
-
-            AppTextField {
-                id: urlField
+            RowLayout {
                 Layout.fillWidth: true
-                placeholder: I18n.t("downloads.url.placeholder")
-                onAccepted: page.startUrl()
+
+                Item { Layout.fillWidth: true }
+
+                SecondaryButton {
+                    text: I18n.t("downloads.clearCompleted")
+                    icon: "x"
+                    visible: Downloads.historyCount > 0
+                    onClicked: Downloads.clearCompleted()
+                }
             }
 
-            PrimaryButton {
-                text: I18n.t("downloads.url.action")
-                icon: "download"
-                onClicked: page.startUrl()
-            }
-        }
+            // ---- URL download (migration stage 5) -------------------------- #
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
 
-        // ---- active downloads ----------------------------------------- #
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 10
-            visible: Downloads.activeCount > 0
-
-            Text {
-                text: I18n.t("downloads.active")
-                color: Theme.textMuted
-                font.pixelSize: Typography.micro + 0.5
-                font.weight: Font.DemiBold
-                font.letterSpacing: Typography.trackingCaps
-                font.family: Theme.fontFamily
-                Layout.leftMargin: 4
-            }
-
-            Repeater {
-                model: Downloads.model
-
-                Item {
-                    id: downloadDelegate
-                    required property string downloadId
-                    required property string title
-                    required property string subtitle
-                    required property real progress
-                    required property string totalText
-                    required property string downloadedText
-                    required property string speedText
-                    required property string etaText
-                    required property int etaSeconds
-                    required property string statusKey
-                    required property string statusText
-                    required property string kind
-                    required property bool pausable
-
-                    visible: downloadDelegate.statusKey !== "completed"
+                AppTextField {
+                    id: urlField
                     Layout.fillWidth: true
-                    implicitHeight: 96
+                    placeholder: I18n.t("downloads.url.placeholder")
+                    onAccepted: page.startUrl()
+                }
 
-                    DownloadCard {
-                        anchors.fill: parent
-                        visible: downloadDelegate.visible
-                        title: downloadDelegate.title
-                        subtitle: downloadDelegate.subtitle
-                        progress: downloadDelegate.progress
-                        totalText: downloadDelegate.totalText
-                        downloadedText: downloadDelegate.downloadedText
-                        speedText: downloadDelegate.speedText
-                        etaText: downloadDelegate.etaText
-                        etaSeconds: downloadDelegate.etaSeconds
-                        statusKey: downloadDelegate.statusKey
-                        statusText: downloadDelegate.statusText
-                        kind: downloadDelegate.kind
-                        pausable: downloadDelegate.pausable
+                PrimaryButton {
+                    text: I18n.t("downloads.url.action")
+                    icon: "download"
+                    onClicked: page.startUrl()
+                }
+            }
 
-                        onPauseRequested: Downloads.pauseAt(downloadDelegate.downloadId)
-                        onResumeRequested: Downloads.resumeAt(downloadDelegate.downloadId)
-                        onCancelRequested: Downloads.cancelAt(downloadDelegate.downloadId)
-                        onRetryRequested: Downloads.retryAt(downloadDelegate.downloadId)
-                        onCompletedRequested: Downloads.removeCompletedAt(downloadDelegate.downloadId)
+            // ---- active downloads ----------------------------------------- #
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                visible: Downloads.activeCount > 0 || Downloads.failedCount > 0
+
+                Text {
+                    text: I18n.t("downloads.active")
+                    color: Theme.textMuted
+                    font.pixelSize: Typography.micro + 0.5
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: Typography.trackingCaps
+                    font.family: Theme.fontFamily
+                    Layout.leftMargin: 4
+                }
+
+                Repeater {
+                    model: Downloads.model
+
+                    Item {
+                        id: downloadDelegate
+                        required property string downloadId
+                        required property string title
+                        required property string subtitle
+                        required property real progress
+                        required property string totalText
+                        required property string downloadedText
+                        required property string speedText
+                        required property string etaText
+                        required property int etaSeconds
+                        required property string statusKey
+                        required property string statusText
+                        required property string kind
+                        required property bool pausable
+
+                        visible: downloadDelegate.statusKey !== "completed"
+                        Layout.fillWidth: true
+                        implicitHeight: 96
+
+                        DownloadCard {
+                            anchors.fill: parent
+                            visible: downloadDelegate.visible
+                            title: downloadDelegate.title
+                            subtitle: downloadDelegate.subtitle
+                            progress: downloadDelegate.progress
+                            totalText: downloadDelegate.totalText
+                            downloadedText: downloadDelegate.downloadedText
+                            speedText: downloadDelegate.speedText
+                            etaText: downloadDelegate.etaText
+                            etaSeconds: downloadDelegate.etaSeconds
+                            statusKey: downloadDelegate.statusKey
+                            statusText: downloadDelegate.statusText
+                            kind: downloadDelegate.kind
+                            pausable: downloadDelegate.pausable
+
+                            onPauseRequested: Downloads.pauseAt(downloadDelegate.downloadId)
+                            onResumeRequested: Downloads.resumeAt(downloadDelegate.downloadId)
+                            onCancelRequested: Downloads.cancelAt(downloadDelegate.downloadId)
+                            onRetryRequested: Downloads.retryAt(downloadDelegate.downloadId)
+                            onCompletedRequested: Downloads.removeCompletedAt(downloadDelegate.downloadId)
+                        }
                     }
                 }
             }
-        }
 
-        // ---- completed ---------------------------------------------------- #
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 10
-            visible: Downloads.completedCount > 0
+            // ---- completed ---------------------------------------------------- #
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                visible: Downloads.completedCount > 0
 
-            Text {
-                text: I18n.t("downloads.completed")
-                color: Theme.textMuted
-                font.pixelSize: Typography.micro + 0.5
-                font.weight: Font.DemiBold
-                font.letterSpacing: Typography.trackingCaps
-                font.family: Theme.fontFamily
-                Layout.leftMargin: 4
-            }
+                Text {
+                    text: I18n.t("downloads.completed")
+                    color: Theme.textMuted
+                    font.pixelSize: Typography.micro + 0.5
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: Typography.trackingCaps
+                    font.family: Theme.fontFamily
+                    Layout.leftMargin: 4
+                }
 
-            Repeater {
-                model: Downloads.model
+                Repeater {
+                    model: Downloads.model
 
-                Item {
-                    id: completedDelegate
-                    required property string downloadId
-                    required property string title
-                    required property string subtitle
-                    required property real progress
-                    required property string totalText
-                    required property string downloadedText
-                    required property string speedText
-                    required property string etaText
-                    required property int etaSeconds
-                    required property string statusKey
-                    required property string statusText
-                    required property string kind
+                    Item {
+                        id: completedDelegate
+                        required property string downloadId
+                        required property string title
+                        required property string subtitle
+                        required property real progress
+                        required property string totalText
+                        required property string downloadedText
+                        required property string speedText
+                        required property string etaText
+                        required property int etaSeconds
+                        required property string statusKey
+                        required property string statusText
+                        required property string kind
 
-                    visible: completedDelegate.statusKey === "completed"
-                    Layout.fillWidth: true
-                    implicitHeight: 96
+                        visible: completedDelegate.statusKey === "completed"
+                        Layout.fillWidth: true
+                        implicitHeight: 96
 
-                    DownloadCard {
-                        anchors.fill: parent
-                        visible: completedDelegate.visible
-                        title: completedDelegate.title
-                        subtitle: I18n.t("downloads.completed.subtitle")
-                        progress: 1.0
-                        totalText: completedDelegate.totalText
-                        downloadedText: completedDelegate.totalText
-                        speedText: "-"
-                        etaText: ""
-                        statusKey: "completed"
-                        statusText: I18n.t("downloads.completed.status")
-                        kind: completedDelegate.kind
-                        onCompletedRequested: Downloads.removeCompletedAt(completedDelegate.downloadId)
+                        DownloadCard {
+                            anchors.fill: parent
+                            visible: completedDelegate.visible
+                            title: completedDelegate.title
+                            subtitle: I18n.t("downloads.completed.subtitle")
+                            progress: 1.0
+                            totalText: completedDelegate.totalText
+                            downloadedText: completedDelegate.totalText
+                            speedText: "-"
+                            etaText: ""
+                            statusKey: "completed"
+                            statusText: I18n.t("downloads.completed.status")
+                            kind: completedDelegate.kind
+                            onCompletedRequested: Downloads.removeCompletedAt(completedDelegate.downloadId)
+                        }
                     }
                 }
             }
-        }
 
-        // ---- empty state ---------------------------------------------------- #
-        Item {
-            id: emptyWrap
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.minimumHeight: 340
-            clip: true
-            visible: Downloads.activeCount === 0 && Downloads.completedCount === 0
+            // ---- empty state ---------------------------------------------------- #
+            Item {
+                id: emptyWrap
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 340
+                clip: true
+                visible: Downloads.activeCount === 0 && Downloads.historyCount === 0
 
 
-            EmptyState {
-                id: emptyState
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.top
-                anchors.topMargin: 48
-                width: parent.width
-                icon: "download"
-                tint: Theme.textMuted
-                title: I18n.t("downloads.empty.title")
-                subtitle: I18n.t("downloads.empty.subtitle")
-                actionText: I18n.t("downloads.empty.action")
-                onActionTriggered: Bus.goTo("updates")
+                EmptyState {
+                    id: emptyState
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 48
+                    width: parent.width
+                    icon: "download"
+                    tint: Theme.textMuted
+                    title: I18n.t("downloads.empty.title")
+                    subtitle: I18n.t("downloads.empty.subtitle")
+                    actionText: I18n.t("downloads.empty.action")
+                    onActionTriggered: Bus.goTo("updates")
+                }
             }
-        }
 
-        Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+            Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+        }
     }
 }

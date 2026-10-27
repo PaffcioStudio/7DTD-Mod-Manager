@@ -145,6 +145,13 @@ class SettingsService(QObject):
         if self._persist:
             fs.write_json(self._file, self._values)
 
+    @Slot()
+    def flush(self) -> None:
+        """Save pending settings even when the window closes during debounce."""
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self._save()
+
     def _get(self, key: str):
         return self._values.get(key, DEFAULTS.get(key))
 

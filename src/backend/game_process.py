@@ -768,6 +768,24 @@ def _ensure_steam_client_running(steam_bin: str) -> None:
         logger.exception("Failed to start the Steam client")
 
 
+def instance_compat_root(game_branch: str, instance_id: str = "") -> Path:
+    # Registry IDs are untrusted file data; hash rather than concatenate them.
+    import hashlib
+    root = _manager_data_root() / "compatdata"
+    if instance_id:
+        return root / "instances" / hashlib.sha256(instance_id.encode()).hexdigest()[:24] / game_branch
+    return root / game_branch
+
+
+def game_executables(game_dir: Path) -> list[str]:
+    """Only existing root-level EXEs; never offer Unity crash reporters."""
+    if not game_dir.is_dir():
+        return []
+    return sorted((p.name for p in game_dir.iterdir()
+                   if p.is_file() and p.suffix.casefold() == ".exe"
+                   and not p.name.casefold().startswith("unitycrashhandler")), key=str.casefold)
+
+
 def _launch_downloaded_windows_version(
     game_branch: str,
     user_data_folder: str | Path | None = None,
@@ -778,24 +796,27 @@ def _launch_downloaded_windows_version(
     skip_intro: bool = False,
     proton_path: str = "",
     game_directory: Path | None = None,
+    executable: str = "",
+    instance_id: str = "",
 ) -> bool:
     """Uruchamia pobraną przez DepotDownloader wersję Windows przez Proton.
 
     To omija `steam -applaunch`, które zawsze wskazuje na wersję zainstalowaną
     w bibliotece Steam. Gra nadal ma dostęp do Steamworks, ponieważ klient
     Steam pozostaje uruchomiony, a katalog gry zawiera `steam_appid.txt`.
-    Proton dostaje osobny prefix dla każdej wersji, aby stare buildy nie
-    dzieliły stanu Wine z innymi wersjami.
+    Proton dostaje osobny prefix dla instancji i wersji, aby ustawienia
+    rejestru i stare lokalizacje danych nie były współdzielone.
     """
     if not game_branch:
         return False
 
     data_root = _manager_data_root()
     game_dir = game_directory or (data_root / "game-versions" / game_branch)
-    # Flaga -noeac wybiera zwykły klient. Gdy EAC ma być włączony,
-    # korzystamy z launchera EAC, ale tylko wtedy, gdy plik faktycznie istnieje.
-    if not noeac and (game_dir / "7DaysToDie_EAC.exe").is_file():
-        exe = game_dir / "7DaysToDie_EAC.exe"
+    if executable:
+        if executable not in game_executables(game_dir):
+            logger.error("Invalid or missing selected executable: %s", executable)
+            return False
+        exe = game_dir / executable
     else:
         exe = game_dir / "7DaysToDie.exe"
     if not exe.is_file():
@@ -825,9 +846,9 @@ def _launch_downloaded_windows_version(
         return False
     _ensure_steam_client_running(steam_bin)
 
-    # Osobny prefix na branch: np. ~/.7dtd_modmanager/compatdata/alpha12.5.
-    # Proton potrzebuje wyłącznie ścieżki katalogu, resztę tworzy samo.
-    compat_root = data_root / "compatdata" / game_branch
+    # Separate the registry and legacy save paths by instance and branch.
+    # Existing branch prefixes are preserved for inspecting historical logs.
+    compat_root = instance_compat_root(game_branch, instance_id)
     compat_root.mkdir(parents=True, exist_ok=True)
     _prepare_instance_user_data_compat(user_data_folder, compat_root)
 
@@ -873,6 +894,9 @@ def _launch_downloaded_windows_version(
         skip_news_screen=skip_news_screen,
         skip_intro=skip_intro,
     )
+    if user_data_folder:
+        game_log = instance_logs / ("game-" + time.strftime("%Y%m%d-%H%M%S") + ".log")
+        launch_args.extend(["-logfile", to_wine_path(game_log)])
     command = [str(proton), "run", str(exe), *launch_args]
 
     log_dir = instance_logs
@@ -956,6 +980,8 @@ def launch_game_via_steam(
     skip_intro: bool = False,
     game_branch: str = "",
     proton_path: str = "",
+    executable: str = "",
+    instance_id: str = "",
 ) -> bool:
     """Uruchamia instancję gry.
 
@@ -965,7 +991,7 @@ def launch_game_via_steam(
     `steam -applaunch 251570 ...` i wyboru compatibility tool przez Steam.
     """
     branch = (game_branch or "").strip()
-    if branch or proton_path:
+    if branch or proton_path or executable:
         game_directory = None
         if not branch:
             game_directory = _steam_game_dir()
@@ -981,6 +1007,8 @@ def launch_game_via_steam(
             skip_intro=skip_intro,
             proton_path=proton_path,
             game_directory=game_directory,
+            executable=executable,
+            instance_id=instance_id,
         )
 
     steam_bin = _find_steam_binary()

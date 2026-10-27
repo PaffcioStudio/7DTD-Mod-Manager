@@ -25,7 +25,7 @@ def test_undead_legacy_mirror_is_downloaded_in_one_cookie_session_without_pre_re
 
 def test_url_worker_captures_download_temp_dir_before_async_worker_runs():
     source = (Path(__file__).resolve().parents[1] / "src/backend/download_manager.py").read_text(encoding="utf-8")
-    assert "cancel, pause = item.cancel_event, item.pause_event\n        temp_dir = item.temp_dir" in source
+    assert "cancel, pause = WorkerCancellation(item.cancel_event, self._stop_event), item.pause_event\n        temp_dir = item.temp_dir" in source
     assert "modpack_downloader.cleanup_temp_dir(temp_dir)" in source
 
 

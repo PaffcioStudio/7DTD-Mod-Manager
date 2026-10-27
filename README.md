@@ -47,7 +47,21 @@ The supplied archive also contains `docs/screenshots/modpacks-en.png`; the clear
 
 **Author:** PaffcioStudio
 **Platform:** Linux
-**Current version:** 1.0.47  
+**Current version:** 1.0.48
+
+### Download reliability and instance launch options
+
+Downloads now keeps completed and failed history across restarts. The list scrolls,
+failed entries can be removed, and **Clear completed** also clears failed history
+while keeping queued, running and paused transfers. Public Google Drive files are
+supported, including large-file confirmation and resumable transfers. Missing game
+versions can be downloaded after confirmation; the mod waits for the matching game.
+
+The instance editor can select a root-level game EXE, excluding Unity crash reporters.
+The default is `7DaysToDie.exe`. Direct Proton launches use a separate prefix for each
+instance and game branch, and save a Unity game log under the instance's `logs/`.
+Existing branch prefixes are preserved; the first launch in a new prefix may use
+fresh game preferences. Automatic Steam-managed launches retain Steam's own prefix.
 
 ### Instance playtime and browsing
 

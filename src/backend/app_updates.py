@@ -22,6 +22,7 @@ import requests
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from services.app_info import APP_VERSION
+from services.i18n_message import message as i18n_message
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ API_URL = f"https://api.github.com/repos/{REPO}/releases/tags/release"
 RELEASE_PAGE = f"https://github.com/{REPO}/releases/tag/release"
 _MAX_NOTES = 6000
 
-_VERSION_RE = re.compile(r"(\d+(?:\.\d+)*)")
+_VERSION_RE = re.compile(r"(?<![\d.])(\d+\.\d+(?:\.\d+)*)(?![\d.])")
 _SECTION_RE = re.compile(r"^##\s+(?:\(\s*(?:latest|old|general)\s*\)\s+)?v?(\d+(?:\.\d+)*)\s*$", re.M | re.I)
 
 
@@ -170,7 +171,7 @@ class AppUpdates(QObject):
                 if info is None:
                     logger.warning("App update check: release title has no version number")
                     if manual:
-                        self.checkFailed.emit("no version in release title")
+                        self.checkFailed.emit(i18n_message("appUpdate.invalidTitle"))
                 elif info["newer"]:
                     logger.info("App update available: %s (current %s)", info["version"], APP_VERSION)
                     self.updateAvailable.emit(info["version"], info["notes"], info["url"])

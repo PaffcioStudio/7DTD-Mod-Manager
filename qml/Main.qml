@@ -22,6 +22,22 @@ ApplicationWindow {
         pageStack.go("discover")
     }
 
+    Connections {
+        target: Downloads
+        function onMissingGameVersion(token, branch) {
+            missingGameDialog.token = token
+            missingGameDialog.ask(I18n.t("download.gameVersion.confirmTitle"),
+                I18n.format("download.gameVersion.confirmMessage", {branch: branch}),
+                I18n.t("download.gameVersion.confirmAction"), false)
+        }
+    }
+    ConfirmModal {
+        id: missingGameDialog
+        property string token: ""
+        onConfirmed: Downloads.resolveMissingGame(token, true)
+        onRejected: Downloads.resolveMissingGame(token, false)
+    }
+
     width: Math.max(Boot.width || Settings.windowWidth || 1400, minimumWidth)
     height: Math.max(Boot.height || Settings.windowHeight || 880, minimumHeight)
     minimumWidth: 1150

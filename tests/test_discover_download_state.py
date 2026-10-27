@@ -33,7 +33,7 @@ def test_discover_refreshes_download_state_when_instance_registry_changes():
 def test_queue_restart_keeps_history_without_treating_it_as_install_proof():
     source = (ROOT / "src" / "backend" / "download_manager.py").read_text(encoding="utf-8")
     persist = source[source.index("def _persist_queue"):source.index("def _restore_queue")]
-    assert 'if item.status == "completed" and item.kind != "mod":' in persist
+    assert 'if item.status == "completed" and item.kind != "mod":' not in persist
     state = source[source.index("def modDownloads"):source.index("def activeMap")]
     assert "_completed_mod_is_still_installed(item)" in state
 

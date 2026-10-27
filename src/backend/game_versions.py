@@ -178,6 +178,18 @@ def _branch_dir_is_complete(target: Path) -> bool:
         return False
 
 
+def branch_sort_key(name: str) -> tuple:
+    """Modern numbered releases follow alpha releases; preserve named branches."""
+    low = name.casefold()
+    if low in {"latest_experimental", "public"}:
+        return (3, (1 if low == "latest_experimental" else 0,), low)
+    match = re.match(r"(alpha|v)(\d+(?:\.\d+)*)", low)
+    if match:
+        return (2 if match[1] == "v" else 1,
+                tuple(int(n) for n in match[2].split(".")), low)
+    return (0, (), low)
+
+
 def _branch_sort_key(name: str) -> tuple:
     return tuple(int(n) for n in re.findall(r"\d+", name))
 
@@ -326,7 +338,7 @@ def ensure_tool() -> Path:
 def ensure_fallback_tool(version: str) -> Path:
     """Pobierz wskazaną starszą wersję DepotDownloadera jako fallback."""
     if version not in DEPOTDOWNLOADER_FALLBACK_VERSIONS:
-        raise GameVersionsError(self._i18n_status("gameVersions.status.fallbackUnsupported", {"version": version}))
+        raise GameVersionsError(i18n_message("gameVersions.status.fallbackUnsupported", {"version": version}))
     release_url = (
         "https://api.github.com/repos/SteamRE/DepotDownloader/releases/tags/"
         f"DepotDownloader_{version}"
@@ -474,7 +486,12 @@ class GameVersionsManager(QObject):
     # ---------------- properties ---------------- #
     @Property("QVariantList", notify=changed)
     def versions(self):
-        return self._versions
+        return sorted(self._versions, key=lambda v: branch_sort_key(v["branch"]), reverse=True)
+
+    @Property("QVariantList", notify=changed)
+    def branchChoices(self):
+        choices = {v["branch"]: v for v in self._available + self._versions if v.get("branch")}
+        return sorted(choices.values(), key=lambda v: branch_sort_key(v["branch"]), reverse=True)
 
     @Property("QVariantList", notify=changed)
     def available(self):
@@ -1405,8 +1422,8 @@ class GameVersionsManager(QObject):
                         "buildid": str(info.get("buildid", "")),
                         "size_bytes": int(manifest.get("size", 0) or 0),
                     })
-                # najnowsze na górze wg buildid malejąco
-                items.sort(key=lambda i: int(i["buildid"] or 0), reverse=True)
+                # Release families and numeric versions, newest first.
+                items.sort(key=lambda i: branch_sort_key(i["branch"]), reverse=True)
                 self._available = items
                 self._available_time = time.time()
                 self._emit(self.changed)

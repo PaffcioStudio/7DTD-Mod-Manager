@@ -227,11 +227,11 @@ Item {
             }
 
             IconButton {
-                icon: "check-circle"
-                tooltip: I18n.t("downloads.control.completed")
-                visible: root.completed
-                tint: Theme.success
-                hoverTint: Theme.success
+                icon: root.completed ? "check-circle" : "x"
+                tooltip: I18n.t("downloads.control.removeHistory")
+                visible: root.completed || root.statusKey === "failed"
+                tint: root.completed ? Theme.success : Theme.textMuted
+                hoverTint: root.completed ? Theme.success : Theme.danger
                 onClicked: root.completedRequested()
             }
         }
