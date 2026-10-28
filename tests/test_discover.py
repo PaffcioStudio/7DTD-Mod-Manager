@@ -101,6 +101,46 @@ class DiscoverTests(unittest.TestCase):
             self.assertNotIn("created_after=", url)
             self.assertNotIn("include_adult=", url)
 
+    def test_sort_options_use_site_filter_query_and_keep_other_filters(self):
+        from urllib.parse import parse_qs, urlparse
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("backend.discover.fs.cache_dir", return_value=Path(directory)), \
+                patch("backend.discover.requests.get") as get:
+            get.return_value = Mock(text=catalog_html())
+            for selected in ("", "featured", "trending", "updated", "likes", "downloads", "views"):
+                get.reset_mock()
+                fetch_catalog(query="a & b", category="overhaul", version="v3", page=2,
+                              created_after="30d", include_adult=True, sort_filter=selected)
+                self.assertEqual(get.call_count, 1)
+                params = parse_qs(urlparse(get.call_args.args[0]).query)
+                self.assertNotIn("sort", params)
+                if selected:
+                    self.assertEqual(params.get("filter"), [selected])
+                else:
+                    self.assertNotIn("filter", params)
+                self.assertEqual(params.get("q"), ["a & b"])
+                self.assertEqual(params.get("category"), ["overhaul"])
+                self.assertEqual(params.get("game_version"), ["v3"])
+                self.assertEqual(params.get("page"), ["2"])
+                self.assertEqual(params.get("created_after"), ["30d"])
+                self.assertEqual(params.get("include_adult"), ["true"])
+
+    def test_sort_filter_cache_is_separate_and_invalid_values_are_ignored(self):
+        from urllib.parse import parse_qs, urlparse
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("backend.discover.fs.cache_dir", return_value=Path(directory)), \
+                patch("backend.discover.requests.get") as get:
+            get.return_value = Mock(text=catalog_html())
+            fetch_catalog(sort_filter="trending")
+            fetch_catalog(sort_filter="trending")
+            self.assertEqual(get.call_count, 1)
+            fetch_catalog(sort_filter="downloads")
+            self.assertEqual(get.call_count, 2)
+            fetch_catalog(sort_filter="not-a-real-filter")
+            self.assertEqual(get.call_count, 3)
+            params = parse_qs(urlparse(get.call_args.args[0]).query)
+            self.assertNotIn("filter", params)
+
     def test_cache_reuse_force_refresh_and_offline_fallback(self):
         with tempfile.TemporaryDirectory() as directory, \
                 patch("backend.discover.fs.cache_dir", return_value=Path(directory)), \

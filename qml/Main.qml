@@ -183,7 +183,10 @@ ApplicationWindow {
                     DashboardPage {}
                     ModsPage {}
                     ProfilesPage { id: profilesPage; objectName: "profilesPage" }
-                    SteamReleasesPage { id: steamReleasesPage; objectName: "steamReleasesPage" }
+                    SteamReleasesPage { id: steamReleasesPage
+                        objectName: "steamReleasesPage"
+                        onLogoutRequested: steamAccountModal.requestLogout()
+                    }
                     ProtonsPage { objectName: "protonsPage" }
                     GameProfilesPage {}
                     BackupsPage {}

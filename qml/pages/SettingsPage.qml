@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import "../components"
 import "../theme"
 import "../i18n"
@@ -67,45 +66,40 @@ PageShell {
         { name: "Gold",   value: "#F5B841" }
     ]
 
-    // ---- dialogs ---------------------------------------------------------- #
-    FileDialog {
-        id: exeDialog
-        title: I18n.t("settings.game.fileDialog.exe")
-        nameFilters: [I18n.t("settings.game.fileDialog.exeFilter"), I18n.t("settings.game.fileDialog.allFiles")]
-        onAccepted: {
-            const exe = exeDialog.selectedFile.toString().replace("file://", "")
-            const dir = exe.substring(0, exe.lastIndexOf("/"))
-            Settings.gameExecutable = exe
-            // automatycznie: katalog gry = katalog pliku exe, mody = <katalog>/Mods
-            Settings.gameDirectory = dir
-            Settings.modsDirectory = dir + "/Mods"
-        }
+    // Wewnętrzny picker używa zawsze języka aplikacji, a nie pulpitu.
+    property string pickingSettingsPath: ""
+    function openSettingsPicker(kind) {
+        pickingSettingsPath = kind
+        settingsPicker.selectFile = kind === "exe"
+        settingsPicker.fileExtension = kind === "exe" ? ".exe" : ""
+        let initial = ""
+        if (kind === "exe") {
+            const exe = String(Settings.gameExecutable || "")
+            initial = exe.slice(0, exe.lastIndexOf("/"))
+        } else if (kind === "game") initial = Settings.gameDirectory
+        else if (kind === "mods") initial = Settings.modsDirectory
+        else if (kind === "downloads") initial = Settings.downloadDirectory
+        settingsPicker.openAt(initial || FileBrowser.homePath)
     }
 
-    FolderDialog {
-        id: gameDirDialog
-        title: I18n.t("settings.game.fileDialog.gameDir")
-        onAccepted: {
-            const dir = gameDirDialog.selectedFolder.toString().replace("file://", "")
-            Settings.gameDirectory = dir
-            // mody gry podążają za katalogiem instalacji
-            Settings.modsDirectory = dir + "/Mods"
-        }
-    }
-
-    FolderDialog {
-        id: modsDirDialog
-        title: I18n.t("settings.game.fileDialog.modsDir")
-        onAccepted: {
-            Settings.modsDirectory = modsDirDialog.selectedFolder.toString().replace("file://", "")
-        }
-    }
-
-    FolderDialog {
-        id: downloadDirDialog
-        title: I18n.t("settings.game.fileDialog.downloadDir")
-        onAccepted: {
-            Settings.downloadDirectory = downloadDirDialog.selectedFolder.toString().replace("file://", "")
+    FolderPickerModal {
+        id: settingsPicker
+        pickerTitle: page.pickingSettingsPath === "exe" ? I18n.t("settings.game.fileDialog.exe")
+            : page.pickingSettingsPath === "game" ? I18n.t("settings.game.fileDialog.gameDir")
+            : page.pickingSettingsPath === "mods" ? I18n.t("settings.game.fileDialog.modsDir")
+            : I18n.t("settings.game.fileDialog.downloadDir")
+        confirmText: I18n.t(selectFile ? "folderPicker.chooseFile" : "folderPicker.chooseFolder")
+        onFolderPicked: function(path) {
+            if (page.pickingSettingsPath === "exe") {
+                Settings.gameExecutable = path
+                const dir = path.slice(0, path.lastIndexOf("/"))
+                Settings.gameDirectory = dir
+                Settings.modsDirectory = dir + "/Mods"
+            } else if (page.pickingSettingsPath === "game") {
+                Settings.gameDirectory = path
+                Settings.modsDirectory = path + "/Mods"
+            } else if (page.pickingSettingsPath === "mods") Settings.modsDirectory = path
+            else if (page.pickingSettingsPath === "downloads") Settings.downloadDirectory = path
         }
     }
 
@@ -403,7 +397,7 @@ PageShell {
                             : Settings.gameExecutable
                         Row {
                             spacing: 8
-                            SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: exeDialog.open() }
+                            SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: page.openSettingsPicker("exe") }
                             SecondaryButton {
                                 text: I18n.t("settings.game.clear")
                                 icon: "x"
@@ -420,7 +414,7 @@ PageShell {
                             : Settings.gameDirectory
                         Row {
                             spacing: 8
-                            SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: gameDirDialog.open() }
+                            SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: page.openSettingsPicker("game") }
                         }
                     }
 
@@ -431,7 +425,7 @@ PageShell {
                             : Settings.modsDirectory
                         Row {
                             spacing: 8
-                            SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: modsDirDialog.open() }
+                            SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: page.openSettingsPicker("mods") }
                             SecondaryButton {
                                 text: I18n.t("settings.game.rescan")
                                 icon: "refresh-cw"
@@ -462,7 +456,7 @@ PageShell {
                     SettingsRow {
                         label: I18n.t("settings.download.directory.label")
                         description: Settings.downloadDirectory
-                        SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: downloadDirDialog.open() }
+                        SecondaryButton { text: I18n.t("settings.game.browse"); icon: "folder"; onClicked: page.openSettingsPicker("downloads") }
                     }
 
                     SettingsRow {

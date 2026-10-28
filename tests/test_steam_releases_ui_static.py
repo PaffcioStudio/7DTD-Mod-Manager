@@ -94,3 +94,24 @@ def test_steam_releases_delete_is_confirmed():
     assert 'steamReleases.deleteTitle' in PAGE
     assert 'steamReleases.deleteMessage' in PAGE
     assert 'steamReleases.deleteConfirm' in PAGE
+
+
+def test_uninstall_is_visible_for_historical_and_standard_releases():
+    # Usuwanie ma być widoczne także przy wybranej wersji, nie tylko jako kosz na dole.
+    assert PAGE.count('onClicked: page.askDeleteRelease(') == 3
+    assert 'page.askDeleteRelease(page.selectedHistoricalBranch)' in PAGE
+    assert 'page.askDeleteRelease(branchRow.modelData.branch)' in PAGE
+    assert 'visible: !!entry' in PAGE
+    assert 'danger: true' in PAGE
+    assert 'GameVersions.deleteVersion(branch)' in PAGE
+
+
+def test_import_deletion_has_separate_confirmation_and_bilingual_labels():
+    assert 'entry.origin === "imported"' in PAGE
+    for key in (
+        'steamReleases.uninstall',
+        'steamReleases.removeImport',
+        'steamReleases.removeImportTitle',
+        'steamReleases.removeImportMessage',
+    ):
+        assert TRANSLATIONS.count(f'"{key}"') == 2, key

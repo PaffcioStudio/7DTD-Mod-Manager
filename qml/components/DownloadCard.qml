@@ -31,8 +31,9 @@ Item {
     readonly property color statusColor: Theme.statusColor(statusKey)
     readonly property bool busy: statusKey === "downloading" || statusKey === "queued"
     readonly property bool completed: statusKey === "completed"
-    // rozmiar nieznany (totalText puste) + trwa pobieranie = tryb nieokreślony
-    readonly property bool indeterminate: root.totalText === "" && root.busy
+    // Zwykły download bez rozmiaru ma animację nieokreśloną. Wersje gry
+    // dostają prawdziwy procent od DepotDownloadera nawet bez liczby bajtów.
+    readonly property bool indeterminate: root.totalText === "" && root.busy && root.kind !== "game"
 
     implicitHeight: 96
 
@@ -201,7 +202,7 @@ Item {
             IconButton {
                 icon: "pause"
                 tooltip: root.pausable ? I18n.t("downloads.control.pause") : I18n.t("downloads.control.pauseUnavailable")
-                visible: root.pausable && root.statusKey === "downloading"
+                visible: root.pausable && (root.statusKey === "downloading" || (root.kind === "game" && root.statusKey === "queued"))
                 onClicked: root.pauseRequested()
             }
 

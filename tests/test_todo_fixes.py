@@ -438,9 +438,10 @@ class SteamFailureGuards(unittest.TestCase):
         with patch.object(game_versions.subprocess, "Popen", return_value=FakeProc()):
             error = manager._run_depot(["fake"], "auth", "Konto Steam połączone.")
 
-        self.assertTrue(error.startswith("__I18N__:gameVersions.status.depotExit|"))
+        self.assertTrue(error.startswith("__I18N__:gameVersions.status.depotExitDetail|"))
         payload = json.loads(error.split("|", 1)[1])
         self.assertEqual(payload["code"], 1)
+        self.assertIn("InitializeSteam failed", payload["detail"])
         self.assertEqual(manager.steamUsername, "")
         self.assertFalse(manager.hasSavedSession)
         self.assertEqual(connected, [])
@@ -548,12 +549,14 @@ class DepotDownloaderRetry(unittest.TestCase):
             return processes.pop(0)
 
         with patch.object(game_versions.subprocess, "Popen", side_effect=fake_popen), \
+             patch.object(game_versions, "ensure_fallback_tool", side_effect=OSError("offline")), \
              patch.object(game_versions, "DOWNLOAD_RETRY_DELAY", 0):
             error = manager._run_depot(["depotdownloader", "-dir", str(self.home / "game")], "alpha8.8", "Wersja alpha8.8 pobrana.")
 
         self.assertEqual(error, "")
         self.assertTrue(first_process.terminated)
         self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1][0], calls[0][0])
         self.assertNotIn("-validate", calls[0])
         self.assertNotIn("-validate", calls[1])
         idx = calls[1].index("-max-downloads")
@@ -765,6 +768,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = __import__('backend.download_manager', fromlist=['DownloadListModel']).DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         manager = GameVersionsManager()
@@ -808,6 +812,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         manager = GameVersionsManager()
@@ -838,6 +843,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = type("Bus", (), {"toast": lambda *args, **kwargs: None, "toastKey": lambda *args, **kwargs: None})()
 
@@ -861,6 +867,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         downloads.startGameVersionDownload("alpha21.2", 100)
@@ -884,6 +891,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         class Owner:
@@ -912,6 +920,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = EventBus()
         class Owner:
@@ -919,7 +928,10 @@ class GameVersionDownloadQueue(unittest.TestCase):
                 self.calls = []
             def pause(self): self.calls.append("pause")
             def cancel(self): self.calls.append("cancel")
-            def resume(self, branch): self.calls.append(("resume", branch))
+            def resume(self, branch):
+                self.calls.append(("resume", branch))
+                downloads.startGameVersionDownload(branch, 100)
+                return True
         owner = Owner()
         downloads.setGameVersionsManager(owner)
         downloads.startGameVersionDownload("alpha21.2", 100)
@@ -943,6 +955,7 @@ class GameVersionDownloadQueue(unittest.TestCase):
         downloads._model = DownloadListModel(downloads)
         downloads._last_queue_json = ""
         downloads._shutting_down = False
+        downloads._game_versions = None
         downloads._settings = type("S", (), {"maxConcurrentDownloads": 2})()
         downloads._bus = type("Bus", (), {"toast": lambda *args, **kwargs: None, "toastKey": lambda *args, **kwargs: None})()
         downloads.startGameVersionDownload("public", 100)

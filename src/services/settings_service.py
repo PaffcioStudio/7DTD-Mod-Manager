@@ -27,6 +27,7 @@ DEFAULTS = {
     "discoverDefaultVersion": "",
     "discoverDefaultProvider": "web",
     "discoverDefaultCreatedAfter": "",
+    "discoverDefaultSort": "",
     "discoverDefaultIncludeAdult": False,
     "accentColor": "#FF7A38",
     "themeMode": "dark",             # "dark" | "light" | "stalker" | "stalker-light"
@@ -343,6 +344,20 @@ class SettingsService(QObject):
         if value not in ("", "7d", "30d", "365d"):
             value = ""
         self._set("discoverDefaultCreatedAfter", value, self.discoverDefaultsChanged)
+
+    @Property(str, notify=discoverDefaultsChanged)
+    def discoverDefaultSort(self) -> str:
+        value = str(self._get("discoverDefaultSort") or "")
+        return value if value in ("", "featured", "trending", "updated",
+                                  "likes", "downloads", "views") else ""
+
+    @discoverDefaultSort.setter
+    def discoverDefaultSort(self, value: str) -> None:
+        value = str(value or "")
+        if value not in ("", "featured", "trending", "updated",
+                         "likes", "downloads", "views"):
+            value = ""
+        self._set("discoverDefaultSort", value, self.discoverDefaultsChanged)
 
     @Property(bool, notify=discoverDefaultsChanged)
     def discoverDefaultIncludeAdult(self) -> bool:

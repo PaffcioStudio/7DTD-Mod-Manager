@@ -15,7 +15,7 @@ Item {
     property Item anchorItem: null
     property Item menuParent: null
     property bool accountMenuOpen: false
-    property bool opened: accountMenuOpen || qrModal.opened
+    property bool opened: accountMenuOpen || qrModal.opened || logoutConfirm.opened
 
     // mapToItem() nie jest śledzone przez bindingi QML, więc pozycję menu
     // przeliczamy wymuszając re-ewaluację przez layoutTick: przy otwarciu
@@ -72,6 +72,15 @@ Item {
     function close() {
         accountMenuOpen = false
         qrModal.close()
+        logoutConfirm.close()
+    }
+
+    function requestLogout() {
+        if (!GameVersions.hasSavedSession || GameVersions.busy)
+            return
+        accountMenuOpen = false
+        logoutConfirm.ask(I18n.t("steamAccount.logoutTitle"),
+            I18n.t("steamAccount.logoutMessage"), I18n.t("steamAccount.logout"), false)
     }
 
     function openQrLogin() {
@@ -224,14 +233,23 @@ Item {
 
                 SecondaryButton {
                     text: I18n.t("steamAccount.logout")
+                    objectName: "steamAccountLogout"
                     icon: "x"
                     compact: true
-                    onClicked: {
-                        accountMenuOpen = false
-                        GameVersions.logout()
-                    }
+                    enabled: !GameVersions.busy
+                    onClicked: root.requestLogout()
                 }
             }
+        }
+    }
+
+    ConfirmModal {
+        id: logoutConfirm
+        objectName: "steamLogoutConfirm"
+        confirmDisabled: GameVersions.busy || !GameVersions.hasSavedSession
+        onConfirmed: {
+            if (!GameVersions.busy && GameVersions.hasSavedSession)
+                GameVersions.logout()
         }
     }
 

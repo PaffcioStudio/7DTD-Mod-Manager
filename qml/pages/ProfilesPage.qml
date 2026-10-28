@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import "../components"
 import "../theme"
 import "../i18n"
@@ -417,12 +416,11 @@ PageShell {
     }
 
     // ---- folder picker for the editor ------------------------------------ #
-    FolderDialog {
+    FolderPickerModal {
         id: editorDirDialog
-        title: I18n.t("instances.folderPicker.title")
-        onAccepted: {
-            editorDataDir.text = editorDirDialog.selectedFolder.toString().replace("file://", "")
-        }
+        pickerTitle: I18n.t("instances.folderPicker.title")
+        confirmText: I18n.t("folderPicker.chooseFolder")
+        onFolderPicked: function(path) { editorDataDir.text = path }
     }
 
     // ---- create / edit modal ---------------------------------------------- #
@@ -805,7 +803,7 @@ PageShell {
                                 icon: "folder"
                                 compact: true
                                 enabled: !editorModal.isDefault
-                                onClicked: editorDirDialog.open()
+                                onClicked: editorDirDialog.openAt(editorDataDir.text || FileBrowser.homePath)
                             }
                         }
 

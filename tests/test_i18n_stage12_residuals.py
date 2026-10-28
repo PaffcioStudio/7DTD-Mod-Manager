@@ -18,11 +18,12 @@ def test_folder_picker_errors_are_localized():
 
 def test_file_dialog_titles_and_filters_use_i18n():
     qml = (ROOT / "qml" / "pages" / "SettingsPage.qml").read_text(encoding="utf-8")
-    assert 'title: I18n.t("settings.game.fileDialog.exe")' in qml
-    assert 'title: I18n.t("settings.game.fileDialog.gameDir")' in qml
-    assert 'title: I18n.t("settings.game.fileDialog.modsDir")' in qml
-    assert 'title: I18n.t("settings.game.fileDialog.downloadDir")' in qml
-    assert 'I18n.t("settings.game.fileDialog.exeFilter")' in qml
+    assert 'FolderPickerModal {' in qml
+    for kind in ("exe", "gameDir", "modsDir", "downloadDir"):
+        assert f'I18n.t("settings.game.fileDialog.{kind}")' in qml
+    assert 'pickerTitle: page.pickingSettingsPath' in qml
+    assert 'settingsPicker.selectFile = kind === "exe"' in qml
+    assert 'settingsPicker.fileExtension = kind === "exe" ? ".exe" : ""' in qml
 
 
 def test_game_version_statuses_are_not_hardcoded_polish():

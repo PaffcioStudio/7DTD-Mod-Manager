@@ -21,6 +21,7 @@ tylko dla instancji bez przypisanej kopii.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -40,6 +41,7 @@ from PySide6.QtCore import Property, QObject, QThread, QTimer, Qt, Signal, Slot
 from services import filesystem_service as fs
 from services.i18n_message import message as i18n_message
 from services import install_log
+from backend.legacy_game_catalog import RELEASE_BY_BRANCH, release_options
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,9 @@ STEAM_ACCOUNT_FILE = "steam-account.json"
 # branch. Dla znanych legacy alpha wybieramy właściwy stable branch zamiast
 # uruchamiać aktualne Steam/public.
 LEGACY_ALPHA_STABLE_BRANCHES = {
+    "alpha5": "alpha5.0-fix2",
+    "alpha6": "alpha6.4",
+    "alpha7": "alpha7.11",
     "alpha8": "alpha8.8",
     "alpha9": "alpha9.3",
     "alpha10": "alpha10.4",
@@ -118,6 +123,8 @@ def required_game_branch(value: str) -> str:
     raw = (value or "").strip()
     if not raw:
         return ""
+    if raw.lower() in RELEASE_BY_BRANCH:
+        return raw.lower()
     compact = _normalize_game_version_label(raw)
 
     alpha = re.match(r"^alpha(\d+)((?:\.\d+)*)", compact)
@@ -164,18 +171,40 @@ def version_group(name: str) -> str:
     return n
 
 
-def _branch_dir_is_complete(target: Path) -> bool:
-    """Katalog brancha ma exe + steam_appid.txt z właściwym APP_ID."""
-    if not target.is_dir():
+def _game_files_look_complete(target: Path) -> bool:
+    """Minimalny zestaw plików gry, a nie tylko EXE pobrany na początku."""
+    if not target.is_dir() or not (target / "7DaysToDie.exe").is_file():
         return False
-    exe = target / "7DaysToDie.exe"
     appid = target / "steam_appid.txt"
-    if not exe.is_file() or not appid.is_file():
+    if not appid.is_file():
         return False
     try:
-        return appid.read_text(encoding="utf-8", errors="replace").strip() == APP_ID
+        if appid.read_text(encoding="utf-8", errors="replace").strip() != APP_ID:
+            return False
     except OSError:
         return False
+    data = target / "7DaysToDie_Data"
+    if not data.is_dir():
+        return False
+    # Starsze wersje używają Mono, a nowsze mogą korzystać z IL2CPP.
+    return (data / "Managed" / "Assembly-CSharp.dll").is_file() or (target / "GameAssembly.dll").is_file()
+
+
+def _branch_dir_is_complete(target: Path) -> bool:
+    """Uznaj wersję za zainstalowaną tylko po zapisanym sukcesie pobierania.
+
+    Samo EXE i steam_appid.txt nie świadczą o kompletnym transferze.
+    Rejestr jest zapisywany dopiero po powodzeniu DepotDownloadera.
+    """
+    branch = target.name
+    record = next((v for v in load_versions() if v.get("branch") == branch), None)
+    if record is None or Path(str(record.get("dir", ""))) != target:
+        return False
+    release = RELEASE_BY_BRANCH.get(branch)
+    if release and not release.steam_branch and record.get("origin") != "imported":
+        if str(record.get("depot", "")) != release.depot or str(record.get("manifest", "")) != release.manifest:
+            return False
+    return _game_files_look_complete(target)
 
 
 def branch_sort_key(name: str) -> tuple:
@@ -211,6 +240,8 @@ def resolve_downloaded_branch(value: str) -> str:
     root = versions_root()
     if _branch_dir_is_complete(root / branch):
         return branch
+    if branch in RELEASE_BY_BRANCH:
+        return ""  # Nie zastępuj historycznej wersji sąsiednim wydaniem.
 
     if re.fullmatch(r"alpha\d+", branch):
         matches = lambda n: re.fullmatch(re.escape(branch) + r"\.\d+", n) is not None
@@ -275,6 +306,73 @@ def tools_dir() -> Path:
 
 def tool_path() -> Path:
     return tools_dir() / "DepotDownloader"
+
+
+def parse_depot_code(code: str) -> dict[str, str]:
+    """Kod jest zestawem liczb, nigdy poleceniem do wykonania w shellu."""
+    match = re.fullmatch(
+        r"\s*(?:download_depot\s+)?([0-9]{1,10})\s+([0-9]{1,10})\s+([0-9]{1,20})\s*",
+        code or "", re.IGNORECASE,
+    )
+    if not match:
+        raise GameVersionsError(i18n_message("steamReleases.code.invalid"))
+    numbers = tuple(int(part) for part in match.groups())
+    if any(number <= 0 or number >= 2 ** bits
+           for number, bits in zip(numbers, (32, 32, 64))):
+        raise GameVersionsError(i18n_message("steamReleases.code.invalid"))
+    app_id, depot, manifest = map(str, numbers)
+    if app_id != APP_ID:
+        raise GameVersionsError(i18n_message("steamReleases.code.wrongApp", {"app": app_id}))
+    return {"app_id": app_id, "depot": depot, "manifest": manifest,
+            "osarch": "32" if depot in {"251571", "251574"} else "64"}
+
+
+def manifest_source(branch: str) -> dict[str, str] | None:
+    match = re.fullmatch(r"manifest-([0-9]{1,10})-([0-9]{1,20})", branch)
+    if not match:
+        return None
+    source = parse_depot_code(APP_ID + " " + " ".join(match.groups()))
+    if branch != "manifest-" + "-".join(source[key] for key in ("depot", "manifest")):
+        raise GameVersionsError(i18n_message("steamReleases.code.invalid"))
+    return source
+
+
+def branch_for_depot_code(code: str) -> str:
+    source = parse_depot_code(code)
+    for release in RELEASE_BY_BRANCH.values():
+        if (release.depot, release.manifest) == (source["depot"], source["manifest"]):
+            return release.branch
+    # Depot i manifest w identyfikatorze pozwalają wznowić kolejkę bez
+    # tworzenia fikcyjnej instalacji w game-versions.json przed sukcesem.
+    return "manifest-" + "-".join(source[key] for key in ("depot", "manifest"))
+
+
+def build_download_command(binary: Path, branch: str, target: Path,
+                           username: str, use_qr: bool) -> list[str]:
+    """Zbuduj polecenie pobierania bez mieszania historycznych depotów z public."""
+    legacy = RELEASE_BY_BRANCH.get(branch)
+    source = manifest_source(branch)
+    if source:
+        depot_args = ["-depot", source["depot"], "-manifest", source["manifest"]]
+        os_arch = source["osarch"]
+    elif legacy and not legacy.steam_branch:
+        depot_args = ["-depot", legacy.depot, "-manifest", legacy.manifest]
+        os_arch = legacy.osarch
+    else:
+        depot_args = ["-depot", DEPOT_ID, "-branch", branch]
+        os_arch = "64"
+    cmd = [
+        str(binary), "-app", APP_ID, *depot_args,
+        "-os", "windows", "-osarch", os_arch,
+        "-dir", str(target), "-remember-password",
+        "-loginid", str(new_login_id()),
+        "-max-downloads", str(DOWNLOAD_MAX_DOWNLOADS),
+    ]
+    if use_qr:
+        cmd.append("-qr")
+    else:
+        cmd.extend(["-username", username])
+    return cmd
 
 
 def new_login_id() -> int:
@@ -397,7 +495,144 @@ def load_versions() -> list[dict]:
 
 
 def save_versions(versions: list[dict]) -> None:
-    fs.write_json(registry_path(), {"versions": versions})
+    if not fs.write_json(registry_path(), {"versions": versions}):
+        raise OSError("Nie udało się zapisać rejestru wersji gry.")
+
+
+def reinstall_stage(branch: str) -> Path:
+    """Osobny staging, aby działająca gra pozostała nietknięta."""
+    return versions_root() / f".{branch}.reinstall"
+
+
+def _replace_version_after_download(branch: str, staging: Path, target: Path) -> None:
+    """Podmień katalog dopiero po sukcesie, z cofnięciem przy błędzie."""
+    if target.is_symlink():
+        raise GameVersionsError("Nie można nadpisać importu zewnętrznego. Usuń wpis importu i pobierz własną kopię.")
+    backup = versions_root() / f".{branch}.before-reinstall"
+    if backup.exists() or backup.is_symlink():
+        raise GameVersionsError(f"Pozostała kopia zabezpieczająca: {backup}. Sprawdź ją przed ponowną próbą.")
+    moved_original = False
+    try:
+        if target.exists():
+            target.rename(backup)
+            moved_original = True
+        staging.rename(target)
+    except Exception:
+        if moved_original and not target.exists() and backup.exists():
+            backup.rename(target)
+        raise
+    if moved_original:
+        try:
+            shutil.rmtree(backup)
+        except OSError as exc:
+            logger.warning("Could not remove the previous version backup %s: %s", backup, exc)
+
+
+def game_fingerprint(folder: Path) -> str:
+    """Szybki odcisk zawartości, bez czytania gigabajtów zasobów Unity."""
+    base = Path(folder)
+    files = (
+        "7DaysToDie.exe",
+        "7DaysToDie_Data/Managed/Assembly-CSharp.dll",
+        "7DaysToDie_Data/mainData",
+        "Data/Config/recipes.xml",
+    )
+    digest = hashlib.sha256()
+    found = 0
+    for relative in files:
+        path = base / relative
+        if not path.is_file():
+            continue
+        found += 1
+        size = path.stat().st_size
+        digest.update(relative.encode("utf-8"))
+        digest.update(str(size).encode("ascii"))
+        with path.open("rb") as stream:
+            digest.update(stream.read(256 * 1024))
+            if size > 256 * 1024:
+                stream.seek(max(0, size - 256 * 1024))
+                digest.update(stream.read(256 * 1024))
+    return digest.hexdigest() if found else ""
+
+
+def import_game_version(folder: str, branch: str, custom_name: str = "") -> dict:
+    """Rejestruje instalację bez kopiowania lub modyfikacji plików źródłowych."""
+    source = Path(folder).expanduser().resolve(strict=True)
+    if not source.is_dir() or not (source / "7DaysToDie.exe").is_file():
+        raise GameVersionsError(i18n_message("steamReleases.legacy.error.invalidFolder"))
+    if not (source / "7DaysToDie_Data").is_dir():
+        raise GameVersionsError(i18n_message("steamReleases.legacy.error.incompleteFolder"))
+    # Gra Unity wymaga własnej biblioteki kodu gry. Sam EXE i folder o
+    # odpowiedniej nazwie to za mało, żeby uznać obcy katalog za 7DTD.
+    if not (source / "7DaysToDie_Data" / "Managed" / "Assembly-CSharp.dll").is_file():
+        raise GameVersionsError(i18n_message("steamReleases.legacy.error.invalidGameFiles"))
+
+    raw_name = (custom_name or "").strip()
+    if raw_name:
+        name = re.sub(r"[^a-z0-9._-]+", "-", raw_name.casefold()).strip(".-_")
+        if len(name) < 2 or len(name) > 65:
+            raise GameVersionsError(i18n_message("steamReleases.legacy.error.invalidName"))
+        name = "custom-" + name
+    else:
+        name = (branch or "").strip().lower()
+        if name not in RELEASE_BY_BRANCH:
+            raise GameVersionsError(i18n_message("steamReleases.legacy.error.chooseRelease"))
+
+    root = versions_root()
+    dest = root / name
+    if dest.exists() or dest.is_symlink():
+        raise GameVersionsError(i18n_message("steamReleases.legacy.error.duplicateRelease", {"name": name}))
+    if source == root or root in source.parents:
+        raise GameVersionsError(i18n_message("steamReleases.legacy.error.alreadyManaged"))
+
+    fingerprint = game_fingerprint(source)
+    for record in load_versions():
+        old_path = Path(str(record.get("dir", ""))).expanduser()
+        if old_path.exists() and old_path.resolve() == source:
+            raise GameVersionsError(i18n_message("steamReleases.legacy.error.duplicateLocation", {"branch": record.get("branch", "")}))
+        if fingerprint and old_path.is_dir() and game_fingerprint(old_path) == fingerprint:
+            raise GameVersionsError(i18n_message("steamReleases.legacy.error.duplicateContent", {"branch": record.get("branch", "")}))
+
+    # Zewnętrzna kopia musi mieć prawidłowe AppID dla Steamworks/Protona.
+    # To jedyny plik, jaki import może dodać do istniejącego katalogu.
+    appid_file = source / "steam_appid.txt"
+    created_appid = not appid_file.exists()
+    if not created_appid:
+        if appid_file.read_text(encoding="utf-8").strip() != APP_ID:
+            raise GameVersionsError(i18n_message("steamReleases.legacy.error.wrongAppId"))
+    else:
+        try:
+            appid_file.write_text(APP_ID + "\n", encoding="utf-8")
+        except OSError as exc:
+            raise GameVersionsError(i18n_message("steamReleases.legacy.error.writeAppId", {"error": str(exc)})) from exc
+    try:
+        dest.symlink_to(source, target_is_directory=True)
+    except OSError:
+        if created_appid:
+            appid_file.unlink(missing_ok=True)
+        raise
+    entry = RELEASE_BY_BRANCH.get(name)
+    record = {
+        "branch": name,
+        "dir": str(dest),
+        "source_dir": str(source),
+        "size_bytes": dir_size(source),
+        "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "origin": "imported",
+        "fingerprint": fingerprint,
+        "depot": entry.depot if entry else "",
+        "manifest": entry.manifest if entry else "",
+    }
+    try:
+        versions = load_versions()
+        versions.append(record)
+        save_versions(versions)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        if created_appid:
+            appid_file.unlink(missing_ok=True)
+        raise
+    return record
 
 
 def dir_size(path: Path) -> int:
@@ -464,6 +699,7 @@ class GameVersionsManager(QObject):
         self._download_file_lock_error = False
         self._download_file_lock_path = ""
         self._download_branch = ""
+        self._reinstall_branch = ""
         self._last_game_progress = -1.0
         self._last_logged_game_progress = -1.0
         self._process: subprocess.Popen | None = None
@@ -486,7 +722,13 @@ class GameVersionsManager(QObject):
     # ---------------- properties ---------------- #
     @Property("QVariantList", notify=changed)
     def versions(self):
-        return sorted(self._versions, key=lambda v: branch_sort_key(v["branch"]), reverse=True)
+        # Pokaż również uszkodzone wpisy, ale nie opisuj ich jako pobranych.
+        entries = []
+        for item in self._versions:
+            entry = dict(item)
+            entry["installed"] = self.is_installed(str(item.get("branch", "")))
+            entries.append(entry)
+        return sorted(entries, key=lambda v: branch_sort_key(v["branch"]), reverse=True)
 
     @Property("QVariantList", notify=changed)
     def branchChoices(self):
@@ -496,6 +738,10 @@ class GameVersionsManager(QObject):
     @Property("QVariantList", notify=changed)
     def available(self):
         return self._available
+
+    @Property("QVariantList", constant=True)
+    def historicalReleases(self):
+        return release_options()
 
     @Property(bool, notify=changed)
     def hasSavedSession(self):
@@ -508,6 +754,14 @@ class GameVersionsManager(QObject):
     @Property(str, notify=changed)
     def downloadingBranch(self):
         return self._download_branch
+
+    @Property(str, notify=changed)
+    def reinstallingBranch(self):
+        return self._reinstall_branch
+
+    @Slot(str, result=bool)
+    def isInstalled(self, branch: str) -> bool:
+        return self.is_installed(branch)
 
     @Property(bool, notify=busyChanged)
     def busy(self):
@@ -1131,6 +1385,7 @@ class GameVersionsManager(QObject):
 
         attempt = 0
         file_lock_attempts = 0
+        failure_detail = ""
         try:
             if branch != "auth":
                 install_log.info(
@@ -1139,6 +1394,7 @@ class GameVersionsManager(QObject):
                 )
             while True:
                 self._download_retryable_error = False
+                failure_detail = ""
                 self._download_file_lock_error = False
                 self._download_file_lock_path = ""
                 process = subprocess.Popen(
@@ -1156,6 +1412,17 @@ class GameVersionsManager(QObject):
                         break
                     raw = line.rstrip("\r\n")
                     if raw.strip():
+                        # Wersje Alpha 6 mogą być blokowane przez Steam.
+                        # Zachowaj ostatnią konkretną diagnozę z narzędzia,
+                        # zamiast pokazywać tylko mało przydatny kod 1.
+                        lowered = raw.casefold()
+                        if any(mark in lowered for mark in (
+                            "error", "failed", "access denied", "accessdenied",
+                            "unauthorized", "not authorized", "not subscribed",
+                            "no manifest", "no depot key", "forbidden",
+                            "not available from this account", "no license", "401", "403",
+                        )) and not lowered.startswith("validating "):
+                            failure_detail = raw.strip()[:300]
                         self._consume_line(raw)
                 process.wait()
 
@@ -1357,11 +1624,13 @@ class GameVersionsManager(QObject):
 
                 if process.returncode != 0:
                     install_log.error(
-                        "DEPOT: %s exited with code %s", branch, process.returncode)
-                    self._set_status(self._i18n_status("gameVersions.status.depotExit", {"code": process.returncode}))
-                    raise GameVersionsError(
-                        self._i18n_status("gameVersions.status.depotExit", {"code": process.returncode})
-                    )
+                        "DEPOT: %s exited with code %s; detail=%s",
+                        branch, process.returncode, failure_detail or "none")
+                    key = ("gameVersions.status.depotExitDetail" if failure_detail
+                           else "gameVersions.status.depotExit")
+                    details = {"code": process.returncode, "detail": failure_detail}
+                    self._set_status(self._i18n_status(key, details))
+                    raise GameVersionsError(self._i18n_status(key, details))
 
                 install_log.info("DEPOT: %s completed successfully", branch)
                 self._set_status(finish_status)
@@ -1382,6 +1651,16 @@ class GameVersionsManager(QObject):
             self._emit(self.finished, branch, error)
         return error
 
+    @Slot(str, result=str)
+    def downloadSource(self, branch: str) -> str:
+        source = manifest_source(branch)
+        if source:
+            return f"Steam · Depot {source['depot']} · manifest {source['manifest']}"
+        entry = RELEASE_BY_BRANCH.get(branch)
+        if entry and not entry.steam_branch:
+            return f"Steam · Depot {entry.depot} · manifest {entry.manifest}"
+        return f"Steam · branch {branch} · Depot {DEPOT_ID}"
+
     def is_installed(self, branch: str) -> bool:
         """Czy kompletna kopia brancha (lub jego grupy, np. v2 -> v2.6)
         naprawdę istnieje na dysku.
@@ -1397,6 +1676,15 @@ class GameVersionsManager(QObject):
         return versions_root() / resolved if resolved else None
 
     # ---------------- slots ---------------- #
+    @Slot(str, result=bool)
+    def downloadCode(self, code: str) -> bool:
+        try:
+            branch = branch_for_depot_code(code)
+        except (GameVersionsError, ValueError) as exc:
+            self._set_status(str(exc))
+            return False
+        return self.download(branch)
+
     @Slot()
     def refreshAvailable(self) -> None:
         """Lista branchy (wersji gry) z publicznego API steamcmd."""
@@ -1432,25 +1720,61 @@ class GameVersionsManager(QObject):
                 self._set_status(self._i18n_status("gameVersions.status.listFailed", {"error": str(exc)}))
         threading.Thread(target=worker, daemon=True).start()
 
-    @Slot(str)
-    def download(self, branch: str) -> None:
-        """Pobiera wybraną wersję (branch) gry do game-versions/<branch>."""
+    @Slot(str, result=bool)
+    def download(self, branch: str) -> bool:
+        """Pobierz lub wznów brakującą wersję gry."""
+        return self._start_download(branch, reinstall=False)
+
+    @Slot(str, result=bool)
+    def reinstall(self, branch: str) -> bool:
+        """Pobierz świeżą kopię bez zmieniania obecnej aż do sukcesu."""
+        return self._start_download(branch, reinstall=True)
+
+    def _start_download(self, branch: str, reinstall: bool = False) -> bool:
         branch = required_game_branch((branch or "").strip())
         if not branch or self._busy:
-            return
-        if self.is_installed(branch):
+            return False
+        try:
+            source = manifest_source(branch)
+        except (GameVersionsError, ValueError) as exc:
+            self._set_status(str(exc))
+            return False
+        if source and source["depot"] == "251574":
+            self._set_status(self._i18n_status("steamReleases.legacy.downloadUnavailable", {
+                "branch": branch, "depot": source["depot"],
+            }))
+            return False
+        release = RELEASE_BY_BRANCH.get(branch)
+        if release and not release.download_available:
+            self._set_status(self._i18n_status("steamReleases.legacy.downloadUnavailable", {
+                "branch": branch, "depot": release.depot,
+            }))
+            return False
+        installed = self.is_installed(branch)
+        if installed and not reinstall:
             self._set_status(self._i18n_status("gameVersions.status.alreadyDownloaded", {"branch": branch}))
-            return
+            return False
+        record = next((v for v in load_versions() if v.get("branch") == branch), None)
+        if reinstall and (not installed or record is None):
+            self._set_status(self._i18n_status("steamReleases.reinstallUnavailable"))
+            return False
+        if record and record.get("origin") == "imported" and reinstall:
+            self._set_status(self._i18n_status("steamReleases.reinstallImported"))
+            return False
         if self._rate_limit_remaining() > 0:
             self._set_status(self._rate_limit_status())
-            return
+            return False
         try:
             binary = ensure_tool()
         except Exception as exc:  # noqa: BLE001
             self._set_status(self._i18n_status("gameVersions.status.toolFailed", {"error": str(exc)}))
-            return
+            return False
 
-        target = versions_root() / branch
+        installed_target = versions_root() / branch
+        target = reinstall_stage(branch) if reinstall else installed_target
+        if target.is_symlink() or installed_target.is_symlink() and not reinstall:
+            self._set_status(self._i18n_status("steamReleases.reinstallImported"))
+            return False
         # Po awaryjnym zamknięciu aplikacji DepotDownloader może przeżyć jako
         # sierota i dalej trzymać pliki. Przed nowym pobraniem nie zostawiamy
         # żadnego starego procesu należącego do tego managera.
@@ -1458,22 +1782,8 @@ class GameVersionsManager(QObject):
         fs.ensure_dir(target)
         username = self._steam_username.strip()
         use_qr = not has_saved_session(username)
-        cmd = [
-            str(binary),
-            "-app", APP_ID,
-            "-depot", DEPOT_ID,
-            "-branch", branch,
-            "-os", "windows",
-            "-osarch", "64",
-            "-dir", str(target),
-            "-remember-password",
-            "-loginid", str(new_login_id()),
-            "-max-downloads", str(DOWNLOAD_MAX_DOWNLOADS),
-        ]
-        if use_qr:
-            cmd.append("-qr")
-        else:
-            cmd.extend(["-username", username])
+        legacy = RELEASE_BY_BRANCH.get(branch)
+        cmd = build_download_command(binary, branch, target, username, use_qr)
 
         total_bytes = 0
         for item in self._available:
@@ -1485,6 +1795,7 @@ class GameVersionsManager(QObject):
                 break
 
         self._download_branch = branch
+        self._reinstall_branch = branch if reinstall else ""
         self._last_game_progress = -1.0
         self._last_logged_game_progress = -1.0
         self._set_busy(True)
@@ -1503,19 +1814,31 @@ class GameVersionsManager(QObject):
                 cancelled = self._cancel.is_set() and not paused
                 if paused:
                     self._emit(self.gameDownloadFinished, branch, "paused", "")
-                    return
+                    return False
                 if cancelled:
                     self._emit(self.gameDownloadFinished, branch, "cancelled", "")
-                    return
+                    return False
                 if error:
                     self._emit(self.gameDownloadFinished, branch, "failed", error)
-                    return
+                    return False
+                # AppID musi być widoczny dla uruchamiania kopii przez Proton.
+                appid_file = target / "steam_appid.txt"
+                if not appid_file.exists():
+                    appid_file.write_text(APP_ID + "\n", encoding="utf-8")
+                if not _game_files_look_complete(target):
+                    raise GameVersionsError(self._i18n_status("steamReleases.incompleteDownload"))
+                if reinstall:
+                    _replace_version_after_download(branch, target, installed_target)
                 versions = [v for v in load_versions() if v.get("branch") != branch]
                 versions.append({
                     "branch": branch,
-                    "dir": str(target),
-                    "size_bytes": dir_size(target),
+                    "dir": str(installed_target),
+                    "size_bytes": dir_size(installed_target),
                     "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "origin": "steam_manifest" if source or legacy and not legacy.steam_branch else "steam_branch",
+                    "app_id": APP_ID,
+                    "depot": source["depot"] if source else legacy.depot if legacy and not legacy.steam_branch else DEPOT_ID,
+                    "manifest": source["manifest"] if source else legacy.manifest if legacy and not legacy.steam_branch else "",
                 })
                 save_versions(versions)
                 self._versions = versions
@@ -1527,6 +1850,7 @@ class GameVersionsManager(QObject):
                 self._emit(self.gameDownloadFinished, branch, "failed", str(exc))
             finally:
                 self._download_branch = ""
+                self._reinstall_branch = ""
                 self._last_game_progress = -1.0
                 self._last_logged_game_progress = -1.0
                 with self._lock:
@@ -1536,6 +1860,7 @@ class GameVersionsManager(QObject):
 
         self._worker_thread = threading.Thread(target=worker, daemon=True, name=f"DepotDownload-{branch}")
         self._worker_thread.start()
+        return True
 
     @Slot()
     def startAuth(self) -> None:
@@ -1658,13 +1983,13 @@ class GameVersionsManager(QObject):
             name="DepotPause",
         ).start()
 
-    @Slot(str)
-    def resume(self, branch: str) -> None:
+    @Slot(str, result=bool)
+    def resume(self, branch: str) -> bool:
         """Wznów pobieranie brancha z istniejącego stagingu na dysku."""
         branch = required_game_branch((branch or "").strip())
         if not branch or self._busy:
-            return
-        self.download(branch)
+            return False
+        return self.download(branch)
 
     @Slot()
     def cancel(self) -> None:
@@ -1693,22 +2018,45 @@ class GameVersionsManager(QObject):
         target = versions_root() / branch if branch else None
         self._cleanup_stale_depot_processes(target)
 
+    @Slot(str, str, str, result=str)
+    def importVersion(self, folder: str, branch: str, custom_name: str) -> str:
+        if self._busy:
+            return self._i18n_status("steamReleases.legacy.error.busy")
+        try:
+            record = import_game_version(folder, branch, custom_name)
+        except (OSError, ValueError, GameVersionsError) as exc:
+            message = self._i18n_status("steamReleases.legacy.error.importFailed", {"error": str(exc)})
+            self._set_status(message)
+            return message
+        self._versions = load_versions()
+        self._set_status(self._i18n_status("steamReleases.legacy.importSuccess", {"branch": record["branch"]}))
+        self._emit(self.changed)
+        return ""
+
     @Slot(str)
     def deleteVersion(self, branch: str) -> None:
-        """Usuwa pobraną wersję: katalog danych + wpis w rejestrze."""
+        """Usuwa wpis i własny katalog, nigdy zewnętrzne pliki importu."""
         branch = (branch or "").strip()
-        versions = [v for v in self._versions if v.get("branch") == branch]
-        if not versions:
+        record = next((v for v in self._versions if v.get("branch") == branch), None)
+        if record is None or self._busy:
             return
-        record = versions[0]
-        target = Path(record.get("dir", ""))
-        resolved = target.resolve(strict=False)
-        guard = versions_root().resolve(strict=False)
-        if guard not in resolved.parents:
-            logger.warning("Refusing to delete outside game-versions/: %s", resolved)
+        root = versions_root()
+        target = root / branch
+        # Nie pozwalaj metadanym JSON zmienić celu usuwania.
+        if branch in ("", ".", "..") or "/" in branch or "\\" in branch:
             return
-        shutil.rmtree(resolved, ignore_errors=True)
-        self._versions = [v for v in self._versions
-                          if v.get("branch") != branch]
+        recorded = Path(str(record.get("dir", "")))
+        if recorded != target:
+            logger.warning("Refusing unsafe game version deletion: %s", recorded)
+            return
+        if target.is_symlink():
+            target.unlink()
+        elif record.get("origin") == "imported":
+            # Uszkodzony wpis importu nie powinien nigdy kasować danych.
+            logger.warning("Imported version is no longer a link: %s", target)
+            return
+        elif target.is_dir():
+            shutil.rmtree(target)
+        self._versions = [v for v in self._versions if v.get("branch") != branch]
         save_versions(self._versions)
         self._emit(self.changed)

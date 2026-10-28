@@ -11,8 +11,43 @@ PageShell {
     id: page
     pageName: "steam_releases"
     maxWidth: 1080
+    signal logoutRequested()
 
     property string pendingDeleteBranch: ""
+    property string pendingReinstallBranch: ""
+    property string importFeedback: ""
+    property bool importFeedbackError: false
+    property string codeFeedback: ""
+    property string selectedHistoricalBranch: "alpha5.0"
+    readonly property var selectedHistorical: {
+        const releases = GameVersions.historicalReleases
+        for (let i = 0; i < releases.length; ++i) {
+            if (releases[i].branch === selectedHistoricalBranch)
+                return releases[i]
+        }
+        return releases.length > 0 ? releases[0] : {}
+    }
+
+    FolderPickerModal {
+        id: importGameFolder
+        pickerTitle: I18n.t("steamReleases.legacy.importTitle")
+        confirmText: I18n.t("folderPicker.chooseFolder")
+        onFolderPicked: function(path) {
+            const failure = GameVersions.importVersion(path, page.selectedHistoricalBranch, customReleaseName.text)
+            if (failure !== "") {
+                page.importFeedbackError = true
+                page.importFeedback = I18n.resolveMessage(failure)
+                Bus.toast(page.importFeedback, "error")
+            } else {
+                page.importFeedbackError = false
+                page.importFeedback = I18n.format("steamReleases.legacy.importSuccess", {
+                    branch: customReleaseName.text.trim() !== ""
+                        ? customReleaseName.text.trim() : page.selectedHistoricalBranch
+                })
+                Bus.toast(page.importFeedback, "success")
+            }
+        }
+    }
 
     function fmtSize(bytes) {
         var value = Number(bytes)
@@ -45,14 +80,51 @@ PageShell {
             GameVersions.startAuth()
     }
 
+    function releaseRecord(branch) {
+        return GameVersions.versions.find(function(v) { return v.branch === branch })
+    }
+
     function askDeleteRelease(branch) {
+        const entry = releaseRecord(branch)
+        if (!entry || GameVersions.busy)
+            return
+        const imported = entry.origin === "imported"
         pendingDeleteBranch = branch
         deleteInstalledModal.ask(
-            I18n.t("steamReleases.deleteTitle"),
-            I18n.format("steamReleases.deleteMessage", {branch: branch}),
-            I18n.t("steamReleases.deleteConfirm"),
+            I18n.t(imported ? "steamReleases.removeImportTitle" : "steamReleases.deleteTitle"),
+            I18n.format(imported ? "steamReleases.removeImportMessage" : "steamReleases.deleteMessage", {branch: branch}),
+            I18n.t(imported ? "steamReleases.removeImport" : "steamReleases.deleteConfirm"),
             true
         )
+    }
+
+    function askReinstallRelease(branch) {
+        pendingReinstallBranch = branch
+        reinstallModal.ask(
+            I18n.t("steamReleases.reinstallTitle"),
+            I18n.format("steamReleases.reinstallMessage", {branch: branch}),
+            I18n.t("steamReleases.reinstallConfirm"),
+            false
+        )
+    }
+
+    function startCodeDownload() {
+        if (GameVersions.busy || depotCode.text.trim() === "")
+            return
+        codeFeedback = ""
+        if (!GameVersions.downloadCode(depotCode.text))
+            codeFeedback = GameVersions.status
+    }
+
+    ConfirmModal {
+        id: reinstallModal
+        onConfirmed: {
+            const branch = page.pendingReinstallBranch
+            page.pendingReinstallBranch = ""
+            if (branch !== "")
+                GameVersions.reinstall(branch)
+        }
+        onRejected: page.pendingReinstallBranch = ""
     }
 
     ConfirmModal {
@@ -277,6 +349,274 @@ PageShell {
                         enabled: !GameVersions.busy
                         onClicked: GameVersions.reauthorize()
                     }
+                    SecondaryButton {
+                        objectName: "steamReleasesLogout"
+                        text: I18n.t("steamAccount.logout")
+                        icon: "x"
+                        compact: true
+                        enabled: !GameVersions.busy
+                        onClicked: page.logoutRequested()
+                    }
+                }
+            }
+
+            // ------------------- STARE WERSJE / IMPORT --------------------- #
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: legacyContent.implicitHeight + 32
+                radius: 15
+                color: Theme.bg1
+                border.width: 1
+                border.color: Theme.border
+
+                ColumnLayout {
+                    id: legacyContent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 16
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Icon { name: "archive"; size: 19; tint: Theme.accent }
+                        Text {
+                            text: I18n.t("steamReleases.legacy.title")
+                            color: Theme.text
+                            font.pixelSize: Typography.h2
+                            font.weight: Font.DemiBold
+                            font.family: Theme.fontFamily
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t("steamReleases.legacy.description")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
+
+                    DropdownButton {
+                        Layout.fillWidth: true
+                        value: page.selectedHistoricalBranch
+                        options: GameVersions.historicalReleases.map(function(release) {
+                            return {
+                                value: release.branch,
+                                label: (release.label_key ? I18n.t(release.label_key) : release.label) + " · " + release.date
+                                    + (release.download_available ? "" : " · " + I18n.t("steamReleases.legacy.unavailable"))
+                            }
+                        })
+                        onPicked: function(value) { page.selectedHistoricalBranch = value }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: page.selectedHistorical.steam_branch
+                              ? I18n.t("steamReleases.legacy.steamBranch")
+                              : "Depot " + page.selectedHistorical.depot
+                                + " · manifest " + page.selectedHistorical.manifest
+                                + " · Windows " + page.selectedHistorical.osarch + "-bit"
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: page.selectedHistorical.download_available === false
+                        text: I18n.format("steamReleases.legacy.downloadUnavailable", {
+                            branch: page.selectedHistoricalBranch,
+                            depot: page.selectedHistorical.depot
+                        })
+                        color: Theme.warning
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        PrimaryButton {
+                            readonly property bool installed: GameVersions.versions.some(function(v) {
+                                return v.branch === page.selectedHistoricalBranch && v.installed
+                            })
+                            text: installed ? I18n.t("steamReleases.downloaded")
+                                            : I18n.t("steamReleases.legacy.download")
+                            icon: installed ? "check" : "download"
+                            disabled: GameVersions.busy || installed || page.selectedHistorical.download_available === false
+                            onClicked: GameVersions.download(page.selectedHistoricalBranch)
+                        }
+                        SecondaryButton {
+                            readonly property var entry: GameVersions.versions.find(function(v) {
+                                return v.branch === page.selectedHistoricalBranch
+                            })
+                            visible: !!entry && entry.installed && entry.origin !== "imported"
+                            text: I18n.t("steamReleases.reinstall")
+                            icon: "refresh-cw"
+                            disabled: GameVersions.busy || page.selectedHistorical.download_available === false
+                            onClicked: page.askReinstallRelease(page.selectedHistoricalBranch)
+                        }
+                        SecondaryButton {
+                            readonly property var entry: page.releaseRecord(page.selectedHistoricalBranch)
+                            visible: !!entry
+                            text: I18n.t(entry && entry.origin === "imported"
+                                         ? "steamReleases.removeImport" : "steamReleases.uninstall")
+                            icon: "trash"
+                            danger: true
+                            disabled: GameVersions.busy
+                            onClicked: page.askDeleteRelease(page.selectedHistoricalBranch)
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: I18n.t("steamReleases.legacy.queueHint")
+                            color: Theme.textMuted
+                            font.pixelSize: Typography.caption
+                            font.family: Theme.fontFamily
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Theme.border
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t("steamReleases.legacy.importDescription")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        AppTextField {
+                            id: customReleaseName
+                            Layout.fillWidth: true
+                            placeholder: I18n.t("steamReleases.legacy.customName")
+                        }
+                        SecondaryButton {
+                            text: I18n.t("steamReleases.legacy.import")
+                            icon: "folder-plus"
+                            enabled: !GameVersions.busy
+                            onClicked: {
+                                page.importFeedback = ""
+                                importGameFolder.openAt(FileBrowser.homePath)
+                            }
+                        }
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        visible: page.importFeedback !== ""
+                        implicitHeight: importFeedbackText.implicitHeight + 22
+                        radius: 10
+                        color: Theme.rgba(page.importFeedbackError ? Theme.danger : Theme.success, 0.09)
+                        border.width: 1
+                        border.color: Theme.rgba(page.importFeedbackError ? Theme.danger : Theme.success, 0.35)
+
+                        Text {
+                            id: importFeedbackText
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            text: page.importFeedback
+                            color: page.importFeedbackError ? Theme.danger : Theme.success
+                            font.pixelSize: Typography.caption
+                            font.family: Theme.fontFamily
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t("steamReleases.legacy.importHint")
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: depotCodeContent.implicitHeight + 32
+                radius: 15
+                color: Theme.bg1
+                border.width: 1
+                border.color: Theme.border
+
+                ColumnLayout {
+                    id: depotCodeContent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 16
+                    spacing: 12
+
+                    Text {
+                        text: I18n.t("steamReleases.code.title")
+                        color: Theme.text
+                        font.pixelSize: Typography.body + 1
+                        font.weight: Font.DemiBold
+                        font.family: Theme.fontFamily
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t("steamReleases.code.description")
+                        color: Theme.textSecondary
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        AppTextField {
+                            id: depotCode
+                            objectName: "steamDepotCodeInput"
+                            Layout.fillWidth: true
+                            placeholder: "251570 251576 1730022800995997518"
+                            enabled: !GameVersions.busy
+                            onAccepted: page.startCodeDownload()
+                            onTextChanged: page.codeFeedback = ""
+                        }
+                        PrimaryButton {
+                            objectName: "steamDepotCodeDownload"
+                            text: I18n.t("steamReleases.code.download")
+                            icon: "download"
+                            disabled: GameVersions.busy || depotCode.text.trim() === ""
+                            onClicked: page.startCodeDownload()
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t("steamReleases.code.hint")
+                        color: Theme.textMuted
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: page.codeFeedback !== ""
+                        text: I18n.resolveMessage(page.codeFeedback)
+                        color: Theme.warning
+                        font.pixelSize: Typography.caption
+                        font.family: Theme.fontFamily
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
 
@@ -430,8 +770,13 @@ PageShell {
                                     Layout.preferredWidth: 34
                                     Layout.preferredHeight: 34
                                     radius: 10
-                                    color: Theme.successSoft
-                                    Icon { anchors.centerIn: parent; name: "check"; size: 15; tint: Theme.success }
+                                    color: installedCard.modelData.installed ? Theme.successSoft : Theme.bg1
+                                    Icon {
+                                        anchors.centerIn: parent
+                                        name: installedCard.modelData.installed ? "check" : "alert-triangle"
+                                        size: 15
+                                        tint: installedCard.modelData.installed ? Theme.success : Theme.danger
+                                    }
                                 }
 
                                 ColumnLayout {
@@ -447,9 +792,11 @@ PageShell {
                                         Layout.fillWidth: true
                                     }
                                     Text {
-                                        text: fmtSize(installedCard.modelData.size_bytes)
-                                              + (installedCard.modelData.downloaded_at !== ""
-                                                 ? " · " + fmtDate(installedCard.modelData.downloaded_at) : "")
+                                        text: installedCard.modelData.installed
+                                              ? fmtSize(installedCard.modelData.size_bytes)
+                                                + (installedCard.modelData.downloaded_at !== ""
+                                                   ? " · " + fmtDate(installedCard.modelData.downloaded_at) : "")
+                                              : I18n.t("steamReleases.incompleteStatus")
                                         color: Theme.textMuted
                                         font.pixelSize: Typography.caption
                                         font.family: Theme.fontFamily
@@ -460,10 +807,27 @@ PageShell {
 
                                 IconButton {
                                     buttonSize: 30
+                                    iconSize: 14
+                                    icon: installedCard.modelData.installed ? "refresh-cw" : "download"
+                                    tooltip: installedCard.modelData.installed
+                                             ? I18n.t("steamReleases.reinstall")
+                                             : I18n.t("steamReleases.repairIncomplete")
+                                    enabled: !GameVersions.busy && installedCard.modelData.origin !== "imported"
+                                    onClicked: {
+                                        if (installedCard.modelData.installed)
+                                            page.askReinstallRelease(installedCard.modelData.branch)
+                                        else
+                                            GameVersions.download(installedCard.modelData.branch)
+                                    }
+                                }
+
+                                IconButton {
+                                    buttonSize: 30
                                     iconSize: 13
                                     icon: "trash"
                                     danger: true
-                                    tooltip: I18n.t("steamReleases.deleteInstalled")
+                                    tooltip: I18n.t(installedCard.modelData.origin === "imported"
+                                                     ? "steamReleases.removeImport" : "steamReleases.uninstall")
                                     enabled: !GameVersions.busy
                                     onClicked: page.askDeleteRelease(installedCard.modelData.branch)
                                 }
@@ -495,7 +859,7 @@ PageShell {
                         id: branchRow
                         required property var modelData
                         readonly property bool installed:
-                            GameVersions.versions.some(v => v.branch === branchRow.modelData.branch)
+                            GameVersions.versions.some(v => v.branch === branchRow.modelData.branch && v.installed)
                         readonly property bool downloading:
                             GameVersions.downloadingBranch === branchRow.modelData.branch
 
@@ -576,6 +940,29 @@ PageShell {
                                     value: GameVersions.progress / 100
                                     barHeight: 4
                                 }
+                            }
+
+                            SecondaryButton {
+                                visible: branchRow.installed && GameVersions.versions.some(function(v) {
+                                    return v.branch === branchRow.modelData.branch && v.origin !== "imported"
+                                })
+                                text: I18n.t("steamReleases.reinstall")
+                                icon: "refresh-cw"
+                                compact: true
+                                disabled: GameVersions.busy
+                                onClicked: page.askReinstallRelease(branchRow.modelData.branch)
+                            }
+
+                            SecondaryButton {
+                                readonly property var entry: page.releaseRecord(branchRow.modelData.branch)
+                                visible: !!entry
+                                text: I18n.t(entry && entry.origin === "imported"
+                                             ? "steamReleases.removeImport" : "steamReleases.uninstall")
+                                icon: "trash"
+                                danger: true
+                                compact: true
+                                disabled: GameVersions.busy
+                                onClicked: page.askDeleteRelease(branchRow.modelData.branch)
                             }
 
                             PrimaryButton {

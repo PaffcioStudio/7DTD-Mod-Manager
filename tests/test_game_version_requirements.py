@@ -1,7 +1,15 @@
 from pathlib import Path
 
+import pytest
+
+from backend import game_versions as gv
 from backend.game_versions import required_game_branch
 from backend.scraper_client import select_concrete_game_version
+
+
+@pytest.fixture(autouse=True)
+def isolated_version_registry(tmp_path, monkeypatch):
+    monkeypatch.setattr(gv, "registry_path", lambda: tmp_path / "versions.json")
 
 
 def test_alpha20_alias_resolves_to_steam_stable_branch():
@@ -25,9 +33,7 @@ def test_game_version_helper_checks_physical_install(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gv, "versions_root", lambda: tmp_path)
     target = tmp_path / "alpha20.7"
-    target.mkdir()
-    (target / "7DaysToDie.exe").write_bytes(b"MZ")
-    (target / "steam_appid.txt").write_text("251570", encoding="utf-8")
+    _fake_branch(tmp_path, "alpha20.7")
 
     manager = gv.GameVersionsManager.__new__(gv.GameVersionsManager)
     manager._versions = []
@@ -42,6 +48,10 @@ def _fake_branch(root, name):
     d.mkdir()
     (d / "7DaysToDie.exe").write_bytes(b"MZ")
     (d / "steam_appid.txt").write_text("251570", encoding="utf-8")
+    managed = d / "7DaysToDie_Data" / "Managed"
+    managed.mkdir(parents=True)
+    (managed / "Assembly-CSharp.dll").write_bytes(b"managed")
+    gv.save_versions(gv.load_versions() + [{"branch": name, "dir": str(d)}])
 
 
 def test_major_only_slug_resolves_to_downloaded_patch_branch(tmp_path, monkeypatch):

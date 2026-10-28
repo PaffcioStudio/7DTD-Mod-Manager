@@ -10,12 +10,21 @@ import "../i18n"
 Modal {
     id: root
 
-    title: I18n.t("folderPicker.title")
+    title: pickerTitle !== "" ? pickerTitle : I18n.t("folderPicker.title")
     iconName: "folder"
     cardWidth: 1080
 
     property string selectedFolder: ""
     property string startPath: ""
+    property string pickerTitle: ""
+    property string confirmText: ""
+    property bool selectFile: false
+    property string fileExtension: ""
+
+    function canSelectFile(entry) {
+        return entry && !entry.isDirectory && (fileExtension === "" ||
+            String(entry.entryName || "").toLowerCase().endsWith(fileExtension.toLowerCase()))
+    }
 
     signal folderPicked(string path)
 
@@ -502,12 +511,17 @@ Modal {
                                 cursorShape: entryRow.isDirectory ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 acceptedButtons: Qt.LeftButton
                                 onClicked: {
-                                    root.selectedFolder = entryRow.isDirectory ? entryRow.entryPath : ""
+                                    root.selectedFolder = entryRow.isDirectory
+                                        ? (root.selectFile ? "" : entryRow.entryPath)
+                                        : (root.selectFile && root.canSelectFile(entryRow) ? entryRow.entryPath : "")
                                 }
                                 onDoubleClicked: {
                                     if (entryRow.isDirectory) {
                                         if (FileBrowser.navigate(entryRow.entryPath))
                                             root.selectedFolder = ""
+                                    } else if (root.selectFile && root.canSelectFile(entryRow)) {
+                                        root.folderPicked(entryRow.entryPath)
+                                        root.close()
                                     }
                                 }
                             }
@@ -550,7 +564,9 @@ Modal {
                             Layout.fillWidth: true
                             spacing: 1
                             Text {
-                                text: root.selectedFolder !== "" ? I18n.t("folderPicker.selectedFolder") : I18n.t("folderPicker.currentFolder")
+                                text: root.selectedFolder !== "" ? (root.selectFile ? I18n.t("folderPicker.selectedFile") : I18n.t("folderPicker.selectedFolder"))
+                                    : root.selectFile ? I18n.t("folderPicker.noFileSelected")
+                                    : root.pickerTitle !== "" ? I18n.t("folderPicker.currentFolderGeneric") : I18n.t("folderPicker.currentFolder")
                                 color: Theme.textSecondary
                                 font.pixelSize: Typography.caption
                                 font.weight: Font.Medium
@@ -577,12 +593,14 @@ Modal {
             onClicked: root.close()
         },
         PrimaryButton {
-            text: I18n.t("folderPicker.scanImport")
+            text: root.confirmText !== "" ? root.confirmText : I18n.t("folderPicker.scanImport")
             icon: "search"
             large: true
-            disabled: FileBrowser.currentPath === "" && root.selectedFolder === ""
+            disabled: root.selectFile ? root.selectedFolder === ""
+                                      : FileBrowser.currentPath === "" && root.selectedFolder === ""
             onClicked: {
-                const path = root.selectedFolder !== "" ? root.selectedFolder : FileBrowser.currentPath
+                const path = root.selectedFolder !== "" ? root.selectedFolder : (root.selectFile ? "" : FileBrowser.currentPath)
+                if (path === "") return
                 root.folderPicked(path)
                 root.close()
             }

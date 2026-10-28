@@ -15,6 +15,7 @@ PageShell {
     property string category: Settings.discoverDefaultCategory
     property string version: Settings.discoverDefaultVersion
     property string createdAfter: Settings.discoverDefaultCreatedAfter
+    property string sortFilter: Settings.discoverDefaultSort
     property bool includeAdult: Settings.discoverDefaultIncludeAdult
     // provider katalogu: "web" (7D2D Mods) | "local" (GitHub - overhaule z
     // lokalnego manifestu). Boot.discoverProvider służy tylko do testowego
@@ -65,6 +66,7 @@ PageShell {
         page.category = ""
         page.version = ""
         page.createdAfter = ""
+        page.sortFilter = ""
         page.loaded = true
         page.search(1, false)
     }
@@ -76,7 +78,7 @@ PageShell {
         searchDelay.stop()
         Discover.provider = page.provider
         Discover.search(query, category, version, number, refresh,
-                        createdAfter, includeAdult)
+                        createdAfter, includeAdult, sortFilter)
         results.contentY = 0
     }
     onActiveChanged: {
@@ -145,6 +147,7 @@ PageShell {
                         page.category = ""
                         page.version = ""
                         page.createdAfter = ""
+                        page.sortFilter = ""
                         page.includeAdult = false
                     }
                     page.search(1, false)
@@ -173,6 +176,21 @@ PageShell {
                 value: page.createdAfter
                 onPicked: (value) => { page.createdAfter = value; page.search(1, false) }
             }
+            DropdownButton {
+                visible: page.provider === "web"
+                Layout.preferredWidth: 235
+                options: [
+                    { value: "", label: I18n.t("discover.sort.newest") },
+                    { value: "featured", label: I18n.t("discover.sort.featured") },
+                    { value: "trending", label: I18n.t("discover.sort.trending") },
+                    { value: "updated", label: I18n.t("discover.sort.updated") },
+                    { value: "likes", label: I18n.t("discover.sort.likes") },
+                    { value: "downloads", label: I18n.t("discover.sort.downloads") },
+                    { value: "views", label: I18n.t("discover.sort.views") }
+                ]
+                value: page.sortFilter
+                onPicked: (value) => { page.sortFilter = value; page.search(1, false) }
+            }
             RowLayout {
                 visible: page.provider === "web"
                 spacing: 8
@@ -200,6 +218,7 @@ PageShell {
                     Settings.discoverDefaultCategory = page.category
                     Settings.discoverDefaultVersion = page.version
                     Settings.discoverDefaultCreatedAfter = page.createdAfter
+                    Settings.discoverDefaultSort = page.sortFilter
                     Settings.discoverDefaultIncludeAdult = page.includeAdult
                     Bus.toast(I18n.t("discover.saveDefaults.toast"), "success")
                 }

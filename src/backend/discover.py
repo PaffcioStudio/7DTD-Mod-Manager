@@ -21,6 +21,11 @@ from services.i18n_message import message as i18n_message
 logger = logging.getLogger(__name__)
 CACHE_TTL = 900
 
+# Wartości parametru `filter` stosowane przez stronę 7daystodiemods.com.
+# Pusty ciąg oznacza domyślne sortowanie, bez parametru w adresie.
+DISCOVER_SORT_FILTERS = frozenset({"", "featured", "trending", "updated",
+                                  "likes", "downloads", "views"})
+
 # dołączony do aplikacji katalog overhauli (assets/manifests/) - provider
 # "GitHub" w Odkrywaj; plik jest bundlowany do .deb/.AppImage razem z resztą.
 # Wyjątkiem są wpisy z dynamicznym źródłem wersji (obecnie Undead Legacy),
@@ -143,9 +148,12 @@ def parse_catalog(html: str, category: str = "", version: str = "") -> dict:
 
 
 def fetch_catalog(query="", category="", version="", page=1, refresh=False,
-                 created_after="", include_adult=False):
+                 created_after="", include_adult=False, sort_filter=""):
     params = {"q": query.strip(), "category": category, "game_version": version,
-              "sort": "newest", "page": max(1, page)}
+              "page": max(1, page)}
+    # Serwis używa `filter=trending` itd., a dla Newest nie dodaje `filter`.
+    if sort_filter in DISCOVER_SORT_FILTERS and sort_filter:
+        params["filter"] = sort_filter
     if created_after in {"7d", "30d", "365d"}:
         params["created_after"] = created_after
     if include_adult:
@@ -191,7 +199,7 @@ class DiscoverManager(QObject):
         self._pending = None
         self._thread = None
         self._closed = False
-        self._request = ("", "", "", 1, False, "", False)
+        self._request = ("", "", "", 1, False, "", False, "")
         self._provider = "web"      # "web" (7D2D Mods) | "local" (GitHub)
         self.ready.connect(self._finish)
 
@@ -244,11 +252,14 @@ class DiscoverManager(QObject):
         return self._total
 
     @Slot(str, str, str, int, bool, str, bool)
-    def search(self, query, category, version, page, refresh, created_after="", include_adult=False):
+    @Slot(str, str, str, int, bool, str, bool, str)
+    def search(self, query, category, version, page, refresh, created_after="", include_adult=False,
+               sort_filter=""):
         if self._closed:
             return
         self._generation += 1
-        self._request = (query, category, version, max(1, page), refresh, created_after, bool(include_adult))
+        self._request = (query, category, version, max(1, page), refresh, created_after,
+                         bool(include_adult), sort_filter if sort_filter in DISCOVER_SORT_FILTERS else "")
         self._pending = (self._generation, self._request)
         self._busy = True
         self._error = ""

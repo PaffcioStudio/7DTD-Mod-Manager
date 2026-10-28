@@ -54,6 +54,7 @@ from backend.scraper_client import (
     game_version_matches,
     select_concrete_game_version,
 )
+from backend.legacy_game_catalog import RELEASE_BY_BRANCH
 from backend.game_versions import (
     required_game_branch, resolve_downloaded_branch, version_requirement_text,
     versions_root, APP_ID)
@@ -159,6 +160,7 @@ class DownloadItem:
         self.update_for = update_for        # library_id aktualizowanego wpisu (kind="update")
         self.chosen_file_ref = chosen_file_ref  # "hosted:<id>" / "external:<url>" (etap 13)
         self.install_game = install_game
+        self.reinstall_game = False  # osobny staging dla reinstalacji Steam
         self.game_version = game_version    # wersja gry modu wg katalogu (slug, "" = nieznana)
         self.temp_dir: Path | None = None
         self.restored_paused = False        # odtworzone z downloads.json jako pauza (brak żywego workera)
@@ -270,18 +272,23 @@ class DownloadListModel(QAbstractListModel):
         if total > 0:
             downloaded = min(downloaded, total)
         known = total > 0
+        # Stare Alphy nie mają rozmiaru z listy branchy Steam. DepotDownloader
+        # zna jednak procent z manifestu i przesyła go osobno. Nie gubimy tej
+        # wartości tylko dlatego, że nie umiemy przeliczyć jej na bajty.
+        known_progress = known or (item.kind == "game" and item._progress_override is not None)
+        progress_label = f"{item.progress * 100:.2f}".rstrip("0").rstrip(".") + "%"
         attr = {
             self.IdRole: item.id,
             self.TitleRole: item.title,
             self.SubtitleRole: item.subtitle,
-            self.ProgressRole: item.progress if known else 0.0,
-            self.ProgressTextRole:
-                f"{item.progress * 100:.2f}".rstrip("0").rstrip(".") + "%"
-                if known else "",
+            self.ProgressRole: item.progress if known_progress else 0.0,
+            self.ProgressTextRole: progress_label if known_progress else "",
             self.TotalTextRole: human_size(total) if known else "",
+            # Nie podawaj fałszywego '0 B' przy pobieraniu historycznego depotu.
+            # Procent jest prawdziwy, ale bajtów nie znamy bez danych manifestu.
             self.DownloadedTextRole: (
                 f"{human_size(downloaded)} / {human_size(total)}"
-                if known else human_size(downloaded)),
+                if known else (progress_label if item.kind == "game" and known_progress else human_size(downloaded))),
             self.SpeedTextRole: item.speed_text,
             self.EtaTextRole: item.eta_text,
             self.EtaSecondsRole: item.eta_seconds,
@@ -519,23 +526,58 @@ class DownloadManager(QObject):
 
     @Slot()
     def resumeRestoredGameDownloads(self) -> None:
-        """Automatycznie wznow wyłącznie gry odtworzone z poprzedniej sesji.
+        """Wznawiaj po jednym depoce, wyłącznie gdy właściciel jest wolny.
 
-        Aktywne pobranie zapisujemy jako ``queued`` przy ponownym starcie,
-        a ręcznie zapauzowane pozostaje ``paused``. DepotDownloader sam
-        wykorzystuje istniejące pliki stagingu w game-versions/<branch>.
+        Po restarcie w ``downloads.json`` nie istnieje już żywy proces.
+        Element w stanie ``queued`` NIE jest dowodem na pracujący downloader.
+        Kolejny depot uruchamia się po zakończeniu aktualnego zadania.
         """
-        if self._game_versions is None:
+        if self._shutting_down or self._game_versions is None:
             return
+        if getattr(self._game_versions, "busy", False):
+            return
+        # Priorytet dla przerwanego transferu z poprzedniej sesji.
         item = next((i for i in self._model.items
                      if i.kind == "game" and i.status == "queued"
                      and i.restored_from_queue), None)
         if item is None:
+            item = next((i for i in self._model.items
+                         if i.kind == "game" and i.status == "queued"), None)
+        if item is None:
+            return
+
+        # W czasie awaryjnego zamknięcia pobieranie mogło się już skończyć.
+        # Nie uruchamiaj go ponownie, jeżeli pełna wersja jest w rejestrze.
+        if not item.reinstall_game and self._is_downloaded_game_version(item.ref_id):
+            self.finishGameVersionDownload(item.ref_id, "completed", "")
+            return
+
+        # Nie ustawiaj tutaj downloading: zrobi to sygnał Started dopiero,
+        # kiedy GameVersionsManager faktycznie uruchomi DepotDownloader.
+        result = (self._game_versions.reinstall(item.ref_id) if item.reinstall_game
+                  else self._game_versions.resume(item.ref_id))
+        if result is False:
+            # np. narzędzie niedostępne, Steam odrzucił manifest albo
+            # nie można teraz rozpocząć transferu. Bez wiszącej karty.
+            reason = str(getattr(self._game_versions, "status", "") or "")
+            self.finishGameVersionDownload(
+                item.ref_id, "failed", reason or "Nie udało się wznowić pobierania.")
             return
         item.restored_from_queue = False
-        self._model.touch(self._model.row_of(item.id))
-        self._emit_counts()
-        self._game_versions.resume(item.ref_id)
+        # Nie zostawiaj szarej karty w stanie "queued" podczas logowania,
+        # czekania na manifest i pracy DepotDownloadera. Prawdziwy
+        # worker został już uruchomiony, więc stan można od razu pokazać.
+        if (getattr(self._game_versions, "busy", False)
+                and getattr(self._game_versions, "downloadingBranch", "") == item.ref_id):
+            item.status = "downloading"
+            item.pausable = True
+            self._model.touch(self._model.row_of(item.id))
+            self._emit_counts()
+
+    def _schedule_next_game_download(self) -> None:
+        # Zdarzenie zakończenia jest emitowane z wątku roboczego przez Qt;
+        # następny start musi się odbyć już po obsłużeniu poprzedniego.
+        QTimer.singleShot(0, self.resumeRestoredGameDownloads)
 
     # Persist both pending work and terminal history across restarts.
     def _persist_queue(self) -> None:
@@ -555,6 +597,7 @@ class DownloadManager(QObject):
                 "pausable": item.pausable,
                 "game_version": item.game_version,
                 "install_game": item.install_game,
+                "reinstall_game": item.reinstall_game,
                 "status": item.status,
                 "total_bytes": int(item.total_bytes or 0),
                 "downloaded": int(item.downloaded or 0),
@@ -611,6 +654,7 @@ class DownloadManager(QObject):
                 game_version=required_game_branch(str(rec.get("game_version") or "")),
                 install_game=bool(rec.get("install_game", False)),
             )
+            item.reinstall_game = bool(rec.get("reinstall_game", False))
             item.restored_from_queue = True
             if status == "paused":
                 item.restored_paused = True
@@ -802,6 +846,14 @@ class DownloadManager(QObject):
                 completed.append(item)
 
         self._promote_queued()
+        # Przy odtwarzaniu kolejki sygnał startu DepotDownloadera może
+        # nadejść przed lub po podpięciu menedżera. W wolnym stanie
+        # sprawdzamy ponownie oczekujące pobrania, bez tworzenia workera HTTP.
+        if (self._game_versions is not None
+                and not getattr(self._game_versions, "busy", False)
+                and any(i.kind == "game" and i.status == "queued"
+                        for i in self._model.items)):
+            self.resumeRestoredGameDownloads()
         if changed or completed:
             self._model.touch_all()
         for item in completed:
@@ -916,29 +968,40 @@ class DownloadManager(QObject):
     @Slot(str)
     def pauseAt(self, download_id: str) -> None:
         item = self._find(download_id)
-        if item and item.status == "downloading":
-            if item.kind == "game":
-                if item.pausable and self._game_versions is not None:
-                    # DepotDownloader nie ma własnego trybu pause.
-                    # Zatrzymujemy proces i zostawiamy staging na dysku;
-                    # Resume uruchomi ten sam branch ponownie i downloader
-                    # dokończy istniejące dane.
-                    self._game_versions.pause()
-                else:
-                    self._bus.toastKey("toast.downloads.pauseUnavailable", {}, "info")
-                return
-            if item.real:
-                # prawdziwa pauza HTTP: strumień zamykany, .part zostaje,
-                # wznowienie przez HTTP Range (tylko flavor != "git")
-                if item.pausable:
-                    item.pause_event.set()
-                else:
-                    self._bus.toastKey("toast.downloads.pauseUnavailable", {}, "info")
-                return
+        if item is None:
+            return
+        if item.kind == "game" and item.status == "queued":
+            # Nie istnieje jeszcze proces: pauzujemy lokalną kolejkę.
             item.status = "paused"
+            item.restored_paused = True
             item.speed = 0.0
-            self._model.touch_all()
+            self._model.touch(self._model.row_of(item.id))
             self._emit_counts()
+            return
+        if item.status != "downloading":
+            return
+        if item.kind == "game":
+            owner = self._game_versions
+            if owner is not None and getattr(owner, "downloadingBranch", item.ref_id) == item.ref_id:
+                owner.pause()
+            else:
+                # Gdy proces zniknął, nie czekaj na sygnał, który nie nadejdzie.
+                item.status = "paused"
+                item.restored_paused = True
+                item.speed = 0.0
+                self._model.touch(self._model.row_of(item.id))
+                self._emit_counts()
+            return
+        if item.real:
+            if item.pausable:
+                item.pause_event.set()
+            else:
+                self._bus.toastKey("toast.downloads.pauseUnavailable", {}, "info")
+            return
+        item.status = "paused"
+        item.speed = 0.0
+        self._model.touch_all()
+        self._emit_counts()
 
     @Slot(str)
     def resumeAt(self, download_id: str) -> None:
@@ -953,7 +1016,7 @@ class DownloadManager(QObject):
                 item._last_sample = None
                 self._model.touch_all()
                 self._emit_counts()
-                self._game_versions.resume(item.ref_id)
+                self.resumeRestoredGameDownloads()
                 return
             if item.real:
                 item.pause_event.clear()
@@ -976,15 +1039,19 @@ class DownloadManager(QObject):
         item = self._find(download_id)
         if item and item.status in ("downloading", "paused", "queued"):
             if item.kind == "game":
-                if self._game_versions is not None:
-                    self._game_versions.cancel()
-                # Po pauzie DepotDownloader już nie ma żywego workera, więc
-                # nie nadejdzie później sygnał "cancelled". W takim przypadku
-                # usuń kartę od razu; rozpoczęte dane na dysku pozostają jako
-                # staging i mogą zostać wykorzystane przy kolejnym pobraniu.
-                if item.status == "paused":
-                    self._model.remove(item.id)
-                    self._emit_counts()
+                owner = self._game_versions
+                # Przerwany po restarcie transfer nie ma procesu. Usunięcie
+                # karty musi działać natychmiast, nawet gdy właściciel jest idle.
+                if (item.status == "downloading" and owner is not None
+                        and getattr(owner, "downloadingBranch", item.ref_id) == item.ref_id
+                        and getattr(owner, "busy", True)):
+                    owner.cancel()
+                self._model.remove(item.id)
+                self._bus.toastKey("toast.downloads.gameVersionCancelled", {"branch": item.ref_id}, "info")
+                self._emit_counts()
+                # Czekamy na zakończenie procesu właściciela przed startem
+                # kolejnego transferu. Staging zostaje do późniejszego wznowienia.
+                self._schedule_next_game_download()
                 return
             if item.real:
                 # worker (jeśli już biegnie) sam zgłosi "cancelled" i posprząta
@@ -1021,7 +1088,8 @@ class DownloadManager(QObject):
             item.status = "queued"
             if item.kind == "game":
                 if self._game_versions is not None:
-                    self._game_versions.resume(item.ref_id)
+                    self.resumeRestoredGameDownloads()
+                self._model.touch(self._model.row_of(item.id))
                 self._emit_counts()
                 return
             if item.real:
@@ -1066,6 +1134,15 @@ class DownloadManager(QObject):
         branch = (branch or "").strip()
         if not branch:
             return
+        legacy = RELEASE_BY_BRANCH.get(branch)
+        reinstall_game = (self._game_versions is not None and
+                          getattr(self._game_versions, "reinstallingBranch", "") == branch)
+        source_label = (f"Steam · Depot {legacy.depot} · manifest {legacy.manifest}"
+                        if legacy and not legacy.steam_branch
+                        else f"Steam · branch {branch} · Depot 251576")
+        source_formatter = getattr(self._game_versions, "downloadSource", None)
+        if callable(source_formatter):
+            source_label = source_formatter(branch)
         existing = [i for i in self._model.items
                     if i.kind == "game" and i.ref_id == branch]
         # Nie twórz drugiej karty po ponownym kliknięciu po nieudanej próbie.
@@ -1074,9 +1151,10 @@ class DownloadManager(QObject):
         # pierwszą kartę, a druga zostanie na 0%.
         if existing:
             item = existing[-1]
-            if item.status in ("queued", "downloading"):
+            if item.status == "downloading":
                 return
-            if item.status == "paused":
+            if item.status == "queued" or item.status == "paused":
+                # Po restarcie zachowaj postęp, ale pokaż aktywną kartę.
                 item.status = "downloading"
             else:
                 item.status = "downloading"
@@ -1085,16 +1163,17 @@ class DownloadManager(QObject):
             item.total_bytes = max(0, int(total_bytes or item.total_bytes or 0))
             item.speed = 0.0
             item._last_sample = None
-            item.subtitle = f"Steam · branch {branch} · Depot 251576"
+            item.subtitle = source_label
             item.pausable = True
             item.real = True
             item.flavor = "game"
+            item.reinstall_game = bool(reinstall_game)
         else:
             item = DownloadItem(
                 kind="game",
                 ref_id=branch,
                 title=f"7 Days to Die - {branch}",
-                subtitle=f"Steam · branch {branch} · Depot 251576",
+                subtitle=source_label,
                 total_bytes=max(0, int(total_bytes or 0)),
                 status="downloading",
                 real=True,
@@ -1103,6 +1182,7 @@ class DownloadManager(QObject):
                 pausable=True,
                 flavor="game",
             )
+            item.reinstall_game = bool(reinstall_game)
             self._model.append(item)
         self._model.touch_all()
         self._emit_counts()
@@ -1165,6 +1245,9 @@ class DownloadManager(QObject):
             item = next((i for i in reversed(self._model.items)
                          if i.kind == "game" and i.ref_id == branch), None)
         if item is None:
+            # Użytkownik mógł anulować kartę, zanim stary proces zakończył
+            # pracę. Jego sygnał końcowy nadal odblokowuje resztę kolejki.
+            self._schedule_next_game_download()
             return
         if state == "completed":
             if item.total_bytes > 0:
@@ -1177,6 +1260,7 @@ class DownloadManager(QObject):
             self._model.touch(self._model.row_of(item.id))
             self._emit_counts()
             self._bus.toastKey("toast.downloads.gameVersionDownloaded", {"branch": branch}, "success")
+            self._schedule_next_game_download()
             return
         if state == "paused":
             item.status = "paused"
@@ -1185,11 +1269,13 @@ class DownloadManager(QObject):
             item.subtitle = i18n_message("download.status.paused")
             self._model.touch(self._model.row_of(item.id))
             self._emit_counts()
+            self._schedule_next_game_download()
             return
         if state == "cancelled":
             self._model.remove(item.id)
             self._emit_counts()
             self._bus.toastKey("toast.downloads.gameVersionCancelled", {"branch": branch}, "info")
+            self._schedule_next_game_download()
             return
         item.status = "failed"
         item._progress_override = item.progress
@@ -1199,6 +1285,7 @@ class DownloadManager(QObject):
         self._model.touch(self._model.row_of(item.id))
         self._emit_counts()
         self._bus.toastKey("toast.downloads.gameVersionFailed", {"branch": branch}, "error")
+        self._schedule_next_game_download()
 
     @staticmethod
     def _is_downloaded_game_version(branch: str) -> bool:
