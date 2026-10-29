@@ -175,6 +175,7 @@ Item {
         // Keep Settings and the version footer anchored to the bottom even on
         // small windows or with a larger interface scale.
         Flickable {
+            acceptedButtons: Qt.NoButton
             id: navigationFlickable
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -190,6 +191,19 @@ Item {
             }
             onContentHeightChanged: contentY = Math.max(0, Math.min(
                 contentY, Math.max(0, contentHeight - height)))
+
+            WheelHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: (event) => {
+                    const maxY = Math.max(0, navigationFlickable.contentHeight - navigationFlickable.height)
+                    if (maxY <= 0) { event.accepted = false; return }
+                    navigationFlickable.cancelFlick()
+                    const step = Theme.wheelDelta(event.pixelDelta.y, event.angleDelta.y)
+                    navigationFlickable.contentY = Math.max(0, Math.min(maxY, navigationFlickable.contentY - step))
+                    event.accepted = true
+                }
+            }
 
             ColumnLayout {
                 id: navigationColumn
@@ -401,7 +415,7 @@ Item {
             }
 
             HoverHandler { id: groupHover }
-            TapHandler { onTapped: group.toggleRequested() }
+            TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: group.toggleRequested() }
         }
 
         Item {
@@ -547,6 +561,6 @@ Item {
         }
 
         HoverHandler { id: hover }
-        TapHandler { onTapped: navItem.nav(navItem.pageName) }
+        TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: navItem.nav(navItem.pageName) }
     }
 }

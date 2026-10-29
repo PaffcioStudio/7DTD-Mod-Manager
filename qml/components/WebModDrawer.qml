@@ -11,6 +11,18 @@ Item {
     id: drawer
 
     property bool opened: false
+    property bool closeGuard: false
+    Timer {
+        id: closeGuardTimer
+        interval: 350
+        onTriggered: drawer.closeGuard = false
+    }
+    onOpenedChanged: {
+        closeGuardTimer.stop()
+        closeGuard = !opened
+        if (!opened)
+            closeGuardTimer.start()
+    }
     property string slug: ""
     property string selectedGameVersion: ""
     property var details: ({})
@@ -106,6 +118,8 @@ Item {
             return "unknown"
         if (drawer.selectedGameVersion === "")
             return versions.length === 1 ? "compatible" : "ambiguous"
+        if (detected.length === 0 && declared.length > 1 && versionsMatch(drawer.selectedGameVersion, declared))
+            return "unknown"
         return versionsMatch(drawer.selectedGameVersion, versions)
                ? "compatible" : "incompatible"
     }
@@ -118,10 +132,13 @@ Item {
     property string pendingFileRef: ""
     property string pendingGameVersion: ""
     function requestFileDownload(file) {
-        if (fileVersionStatus(file) === "unknown") {
+        if (fileVersionStatus(file) !== "compatible") {
             pendingFileRef = file.fileRef
             pendingGameVersion = versionForDownload(file)
-            unverifiedVersionDialog.open()
+            unverifiedVersionDialog.ask(
+                I18n.t("download.compatibility.title"),
+                I18n.t("download.compatibility.fileWarning"),
+                I18n.t("download.gameVersion.downloadAnyway"), false)
             return
         }
         Downloads.startModDownloadWithFileVersion(slug, file.fileRef, versionForDownload(file))
@@ -154,8 +171,8 @@ Item {
     parent: Overlay.overlay
     anchors.fill: parent
     z: 400
-    visible: scrim.opacity > 0.001
-    enabled: opened
+    visible: opened || closeGuard || scrim.opacity > 0.001
+    enabled: visible
 
     // Esc zamyka najpierw pełnoekranowy podgląd zdjęcia, dopiero potem drawer
     Keys.onEscapePressed: {
@@ -186,13 +203,16 @@ Item {
         Behavior on opacity { NumberAnimation { duration: 160 } }
         MouseArea {
             anchors.fill: parent
-            onClicked: drawer.close()
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
+            onClicked: if (drawer.opened) drawer.close()
         }
     }
 
     // ---- card ----------------------------------------------------------- #
     Rectangle {
         id: panel
+        enabled: drawer.opened
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -206,6 +226,8 @@ Item {
         // panel konsumuje kliknięcia - nic nie przelatuje do scrima/UI pod spodem
         MouseArea {
             anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
             onClicked: { /* klik w panel - ignorowany */ }
         }
 
@@ -329,12 +351,11 @@ Item {
                                 id: fileRow
                                 required property var modelData
                                 readonly property string rowState: Downloads.modDownloads[fileRow.modelData.fileRef] || ""
-                                readonly property string modState: Downloads.modDownloads[drawer.slug] || ""
                                 readonly property bool rowBusy: ["queued", "downloading", "paused"].indexOf(rowState) >= 0
                                 readonly property string versionStatus: drawer.fileVersionStatus(fileRow.modelData)
                                 readonly property bool rowCompatible: drawer.fileAllowedForSelection(fileRow.modelData)
                                 readonly property bool versionUnverified: versionStatus === "unknown"
-                                readonly property bool rowLocked: rowBusy || ["queued", "downloading", "paused", "completed"].indexOf(modState) >= 0 || !rowCompatible
+                                readonly property bool rowLocked: rowBusy || rowState === "completed"
                                 Layout.fillWidth: true
                                 implicitHeight: fileRow.versionStatus === "compatible" ? 58 : 78
                                 radius: 9
@@ -408,8 +429,8 @@ Item {
                                     }
 
                                     SecondaryButton {
-                                        text: fileRow.rowBusy ? I18n.t("discover.download.queued") : fileRow.modState === "completed" ? I18n.t("discover.download.completed") : I18n.t("discover.download.action")
-                                        icon: fileRow.rowBusy ? "clock" : fileRow.modState === "completed" ? "check" : "download"
+                                        text: fileRow.rowBusy ? I18n.t("discover.download.queued") : fileRow.rowState === "completed" ? I18n.t("discover.download.completed") : I18n.t("discover.download.action")
+                                        icon: fileRow.rowBusy ? "clock" : fileRow.rowState === "completed" ? "check" : "download"
                                         compact: true
                                         disabled: fileRow.rowLocked
                                         onClicked: drawer.requestFileDownload(fileRow.modelData)
@@ -500,57 +521,11 @@ Item {
         }
     }
 
-    Popup {
+    ConfirmModal {
         id: unverifiedVersionDialog
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(460, drawer.width - 32)
-        padding: 22
-        modal: true
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle {
-            color: Theme.bg2
-            radius: 12
-            border.width: 1
-            border.color: Theme.border
-        }
-        contentItem: ColumnLayout {
-            spacing: 16
-            Text {
-                text: I18n.t("discover.drawer.unknownVersionTitle")
-                color: Theme.text
-                font.pixelSize: Typography.h3
-                font.weight: Font.DemiBold
-                font.family: Theme.fontFamily
-                Layout.fillWidth: true
-            }
-            Text {
-                text: I18n.t("discover.drawer.unknownVersionWarning")
-                color: Theme.textSecondary
-                wrapMode: Text.WordWrap
-                font.pixelSize: Typography.small
-                font.family: Theme.fontFamily
-                Layout.fillWidth: true
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-                Item { Layout.fillWidth: true }
-                SecondaryButton {
-                    text: I18n.t("common.confirm.cancel")
-                    onClicked: unverifiedVersionDialog.close()
-                }
-                PrimaryButton {
-                    text: I18n.t("discover.drawer.downloadUnverified")
-                    onClicked: {
-                        unverifiedVersionDialog.close()
-                        Downloads.startModDownloadWithFileVersion(
-                            drawer.slug, drawer.pendingFileRef, drawer.pendingGameVersion)
-                    }
-                }
-            }
-        }
+        cardWidth: 500
+        onConfirmed: Downloads.startModDownloadWithFileOverride(
+            drawer.slug, drawer.pendingFileRef, drawer.pendingGameVersion)
     }
 
     // ---- pełnoekranowy podgląd zrzutów ---------------------------------- #

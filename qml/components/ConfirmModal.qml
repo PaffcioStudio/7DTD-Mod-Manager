@@ -9,6 +9,8 @@ Modal {
 
     signal confirmed()
     signal rejected()
+    signal alternativeConfirmed()
+    property string alternativeLabel: ""
 
     property string message: ""
     property string confirmLabel: I18n.t("common.confirm.confirm")
@@ -68,7 +70,7 @@ Modal {
                 visible: root.optionChecked
             }
 
-            TapHandler { onTapped: root.optionChecked = !root.optionChecked }
+            TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.optionChecked = !root.optionChecked }
         }
 
         Text {
@@ -88,6 +90,11 @@ Modal {
             icon: root.danger ? "trash" : "check"
             disabled: root.confirmDisabled
             onClicked: { if (root._fired || root.confirmDisabled) return; root._fired = true; root.close(); root.confirmed() }
+        },
+        SecondaryButton {
+            visible: root.alternativeLabel !== ""
+            text: root.alternativeLabel
+            onClicked: { if (root._fired) return; root._fired = true; root.close(); root.alternativeConfirmed() }
         },
         SecondaryButton {
             text: root.cancelLabel

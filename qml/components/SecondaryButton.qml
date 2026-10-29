@@ -73,5 +73,11 @@ Item {
     }
 
     HoverHandler { id: hover }
-    TapHandler { id: tap; enabled: !root.disabled; onTapped: root.clicked() }
+    // Przycisk przejmuje gest, żeby nie kliknąć też karty pod spodem.
+    TapHandler {
+        id: tap
+        gesturePolicy: TapHandler.ReleaseWithinBounds
+        enabled: !root.disabled
+        onTapped: root.clicked()
+    }
 }

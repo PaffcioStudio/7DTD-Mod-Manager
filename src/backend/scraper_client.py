@@ -272,7 +272,8 @@ def detect_artifact_game_versions(
     )
     if raw:
         if not declared:
-            return raw
+            # Sam numer wydania moda nie jest dowodem zgodności z grą.
+            return strict
         matched = [
             value for value in raw
             if any(game_version_matches(decl, [value]) for decl in declared)
@@ -613,6 +614,7 @@ class ModInfo:
     files: list[ModFile] = field(default_factory=list)
     external_links: list[ExternalLink] = field(default_factory=list)
     download_instructions: str | None = None
+    thumbnail: str = ""
 
     def files_by_type(self) -> dict[str, list[ModFile]]:
         grouped: dict[str, list[ModFile]] = {}
@@ -754,6 +756,10 @@ class SevenDaysModsClient:
                 or author.get("name")
             )
 
+        current_version = mod.get("current_version")
+        if isinstance(current_version, dict):
+            current_version = current_version.get("version")
+
         files = []
         for raw in mod.get("mod_files") or []:
             if not isinstance(raw, dict) or not raw.get("id"):
@@ -766,7 +772,7 @@ class SevenDaysModsClient:
                     size=int(raw.get("size") or 0),
                     label=raw.get("label") or raw.get("filename") or i18n_message("common.unnamed"),
                     file_type=raw.get("file_type") or "main",
-                    version=raw.get("mod_version"),
+                    version=raw.get("mod_version") or current_version,
                     scan_status=raw.get("scan_status"),
                     description=raw.get("description"),
                     sort_order=int(raw.get("sort_order") or 0),
@@ -792,10 +798,6 @@ class SevenDaysModsClient:
             elif isinstance(gv, dict):
                 game_versions.append(str(gv.get("name") or gv.get("version") or gv.get("slug") or ""))
 
-        current_version = mod.get("current_version")
-        if isinstance(current_version, dict):
-            current_version = current_version.get("version")
-
         external_links = []
         for raw in mod.get("external_links") or []:
             if not isinstance(raw, dict) or not raw.get("id") or not raw.get("url"):
@@ -806,7 +808,7 @@ class SevenDaysModsClient:
                     url=raw["url"],
                     label=raw.get("label") or raw["url"],
                     file_type=raw.get("file_type") or "external",
-                    version=raw.get("mod_version"),
+                    version=raw.get("mod_version") or current_version,
                     description=raw.get("description"),
                     sort_order=int(raw.get("sort_order") or 0),
                 )
@@ -826,6 +828,8 @@ class SevenDaysModsClient:
             game_versions=game_versions,
             files=files,
             external_links=external_links,
+            thumbnail=(mod.get("thumbnail", {}).get("url") or "")
+                if isinstance(mod.get("thumbnail"), dict) else (mod.get("thumbnail") or ""),
             download_instructions=mod.get("download_instructions"),
         )
 
@@ -877,14 +881,14 @@ class SevenDaysModsClient:
                 "filename": filename,
                 "label": label,
                 "file_type": raw.get("file_type") or "main",
-                "version": raw.get("mod_version"),
+                "version": raw.get("mod_version") or current_version,
                 "size_bytes": int(raw.get("size") or 0),
                 "verified": raw.get("scan_status") == "clean",
                 "detected_game_versions": detect_file_game_versions(
                     label=label,
                     filename=filename,
                     declared_versions=declared,
-                    mod_version=raw.get("mod_version"),
+                    mod_version=raw.get("mod_version") or current_version,
                 ),
                 "download_url": None,  # podpisany URL dopiero z flagą --resolve
             })
@@ -900,7 +904,7 @@ class SevenDaysModsClient:
                 "label": label,
                 "url": raw["url"],
                 "file_type": raw.get("file_type") or "external",
-                "version": raw.get("mod_version"),
+                "version": raw.get("mod_version") or current_version,
                 "detected_game_versions": detect_artifact_game_versions(
                     label=label,
                     # Nazwa artefaktu jest bezpieczniejszym źródłem niż sam
@@ -908,14 +912,14 @@ class SevenDaysModsClient:
                     # nazwę ZIP-a bez używania tymczasowego adresu CDN.
                     filename=ExternalLink(
                         id=raw["id"], url=raw["url"], label=label,
-                        version=raw.get("mod_version")
+                        version=raw.get("mod_version") or current_version
                     ).filename,
                     declared_versions=(
                         raw.get("game_versions")
                         if isinstance(raw.get("game_versions"), (list, tuple))
                         else [raw.get("game_version")] if raw.get("game_version") else []
                     ),
-                    mod_version=raw.get("mod_version"),
+                    mod_version=raw.get("mod_version") or current_version,
                 ),
             })
 

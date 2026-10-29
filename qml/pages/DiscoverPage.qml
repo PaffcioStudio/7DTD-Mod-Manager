@@ -247,6 +247,7 @@ PageShell {
             Layout.fillHeight: true
 
             ListView {
+                acceptedButtons: Qt.NoButton
                 id: results
                 anchors.fill: parent
                 clip: true
@@ -289,6 +290,7 @@ PageShell {
                         anchors.top: parent.top
                         height: parent.height - 58
                         TapHandler {
+                            gesturePolicy: TapHandler.ReleaseWithinBounds
                             onTapped: {
                                 // web: szczegóły ze strony; lokalne: drawer
                                 // z PEŁNYM opisem (karta ucina elizją)

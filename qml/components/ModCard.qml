@@ -20,6 +20,13 @@ Item {
     property string gameVersion: ""   // wersja gry wg katalogu (slug; "" = nieznana)
     property string newVersion: ""
     property string author: ""
+    property string source: ""
+    readonly property string sourceLabel: source.indexOf("web:") === 0
+        ? I18n.t("mod.source.discover")
+        : source === "modpack" ? I18n.t("mod.source.url")
+        : source === "import" || source === "orphan"
+          ? I18n.t("mod.source.manual")
+          : source === "main_location" ? I18n.t("mod.source.local") : I18n.t("mod.source.unknown")
     property string description: ""
     property string category: "Gameplay"
     property bool modEnabled: false
@@ -222,7 +229,7 @@ Item {
                 text: I18n.format("mod.card.meta", {
                     author: card.author,
                     updatedAgo: card.updatedAgo,
-                    category: Theme.catLabel(card.category),
+                    category: card.sourceLabel,
                     gameSuffix: card.gameVersion !== "" ? "  ·  " + I18n.format("mod.card.gameSuffix", {gameVersion: card.gameVersion.toUpperCase()}) : ""
                 })
                 color: Theme.textMuted

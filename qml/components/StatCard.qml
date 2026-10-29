@@ -107,5 +107,5 @@ Item {
     }
 
     HoverHandler { id: hover; enabled: root.clickable }
-    TapHandler { id: tap; enabled: root.clickable; onTapped: root.clicked() }
+    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; id: tap; enabled: root.clickable; onTapped: root.clicked() }
 }

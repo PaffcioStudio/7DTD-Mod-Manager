@@ -220,6 +220,6 @@ Item {
         }
 
         HoverHandler { id: hover }
-        TapHandler { onTapped: pill.clicked() }
+        TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: pill.clicked() }
     }
 }

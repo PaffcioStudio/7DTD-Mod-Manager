@@ -152,7 +152,7 @@ Item {
             }
 
             HoverHandler { id: gameHover }
-            TapHandler { onTapped: header.gameStatusRequested() }
+            TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: header.gameStatusRequested() }
 
             // tooltip - below the dot: the header sits at the very top of the
             // window, so an above-dot tooltip would leave the window frame.

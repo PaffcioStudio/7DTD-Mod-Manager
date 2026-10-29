@@ -10,6 +10,18 @@ Item {
     id: drawer
 
     property bool opened: false
+    property bool closeGuard: false
+    Timer {
+        id: closeGuardTimer
+        interval: 350
+        onTriggered: drawer.closeGuard = false
+    }
+    onOpenedChanged: {
+        closeGuardTimer.stop()
+        closeGuard = !opened
+        if (!opened)
+            closeGuardTimer.start()
+    }
     property string modId: ""
     property var modData: ({})
 
@@ -39,8 +51,8 @@ Item {
     parent: Overlay.overlay
     anchors.fill: parent
     z: 400
-    visible: scrim.opacity > 0.001
-    enabled: opened
+    visible: opened || closeGuard || scrim.opacity > 0.001
+    enabled: visible
 
     Keys.onEscapePressed: close()
 
@@ -66,13 +78,16 @@ Item {
         // nie trafiały w przyciski strony pod spodem (bug klasy D24)
         MouseArea {
             anchors.fill: parent
-            onClicked: drawer.close()
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
+            onClicked: if (drawer.opened) drawer.close()
         }
     }
 
     // ---- panel ------------------------------------------------------------ #
     Item {
         id: panel
+        enabled: drawer.opened
         width: 480
         height: parent.height
         x: drawer.opened ? parent.width - width : parent.width
@@ -94,6 +109,8 @@ Item {
         // (przyciski, przełączniki) siedzą wyżej i działają normalnie
         MouseArea {
             anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
             onClicked: { /* klik w panel - ignorowany */ }
         }
 
@@ -226,6 +243,7 @@ Item {
 
             // ---- scrollable content --------------------------------------- #
             Flickable {
+                acceptedButtons: Qt.NoButton
                 id: flick
                 Layout.fillWidth: true
                 Layout.fillHeight: true

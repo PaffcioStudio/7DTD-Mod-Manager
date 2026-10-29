@@ -47,7 +47,8 @@ def test_header_account_button_remains_clickable_and_changes_tint_when_connected
 
 def test_game_status_badge_opens_game_settings_section():
     assert 'signal gameStatusRequested()' in HEADER_QML
-    assert 'TapHandler { onTapped: header.gameStatusRequested() }' in HEADER_QML
+    assert 'onTapped: header.gameStatusRequested()' in HEADER_QML
+    assert 'gesturePolicy: TapHandler.ReleaseWithinBounds' in HEADER_QML
     assert 'onGameStatusRequested:' in MAIN_QML
     assert 'settingsPage.openSection("game")' in MAIN_QML
 

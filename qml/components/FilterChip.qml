@@ -54,5 +54,5 @@ Item {
     }
 
     HoverHandler { id: hover }
-    TapHandler { onTapped: root.clicked() }
+    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.clicked() }
 }

@@ -12,6 +12,18 @@ Item {
     id: drawer
 
     property bool opened: false
+    property bool closeGuard: false
+    Timer {
+        id: closeGuardTimer
+        interval: 350
+        onTriggered: drawer.closeGuard = false
+    }
+    onOpenedChanged: {
+        closeGuardTimer.stop()
+        closeGuard = !opened
+        if (!opened)
+            closeGuardTimer.start()
+    }
     property var entry: ({})
 
     readonly property string title: entry.title || ""
@@ -33,8 +45,8 @@ Item {
     parent: Overlay.overlay
     anchors.fill: parent
     z: 400
-    visible: scrim.opacity > 0.001
-    enabled: opened
+    visible: opened || closeGuard || scrim.opacity > 0.001
+    enabled: visible
 
     Keys.onEscapePressed: close()
 
@@ -47,13 +59,16 @@ Item {
         Behavior on opacity { NumberAnimation { duration: 160 } }
         MouseArea {
             anchors.fill: parent
-            onClicked: drawer.close()
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
+            onClicked: if (drawer.opened) drawer.close()
         }
     }
 
     // ---- card ----------------------------------------------------------- #
     Rectangle {
         id: panel
+        enabled: drawer.opened
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -67,6 +82,8 @@ Item {
         // panel konsumuje kliknięcia - nic nie przelatuje do scrima/UI pod spodem
         MouseArea {
             anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
             onClicked: { /* klik w panel - ignorowany */ }
         }
 

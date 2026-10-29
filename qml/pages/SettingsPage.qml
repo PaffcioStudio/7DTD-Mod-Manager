@@ -205,7 +205,7 @@ PageShell {
                             }
 
                             HoverHandler { id: candidateHover }
-                            TapHandler { onTapped: page.selectedGameIndex = candidateRow.index }
+                            TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: page.selectedGameIndex = candidateRow.index }
                         }
                     }
                 }
@@ -299,7 +299,7 @@ PageShell {
                     }
 
                     HoverHandler { id: navHover }
-                    TapHandler { onTapped: page.currentSection = navItem.modelData.key }
+                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: page.currentSection = navItem.modelData.key }
                 }
             }
         }
@@ -595,6 +595,7 @@ PageShell {
                                     }
 
                                     TapHandler {
+                                        gesturePolicy: TapHandler.ReleaseWithinBounds
                                         onTapped: Settings.accentColor = swatch.modelData.value
                                     }
 
@@ -1216,7 +1217,7 @@ PageShell {
                 }
             }
 
-            TapHandler { onTapped: faq.expanded = !faq.expanded }
+            TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: faq.expanded = !faq.expanded }
         }
 
         Text {

@@ -111,6 +111,7 @@ Item {
     property double _closedAt: -10000
 
     TapHandler {
+        gesturePolicy: TapHandler.ReleaseWithinBounds
         enabled: !root.disabled
         onPressedChanged: if (pressed) root._pressAt = Date.now()
         onTapped: {
@@ -175,6 +176,7 @@ Item {
                                      menu.maxMenuHeight - menu.topPadding - menu.bottomPadding)
 
             Flickable {
+                acceptedButtons: Qt.NoButton
                 id: flick
                 anchors.fill: parent
                 contentHeight: contentCol.implicitHeight

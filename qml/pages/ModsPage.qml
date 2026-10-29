@@ -10,6 +10,12 @@ PageShell {
     pageName: "mods"
     maxWidth: 1180
 
+    property var sourceOptions: [
+        { value: "all", label: I18n.t("mods.source.all") },
+        { value: "discover", label: I18n.t("mods.source.discover") },
+        { value: "manual", label: I18n.t("mods.source.manual") }
+    ]
+
     property string pendingUninstallId: ""
     property string pendingUninstallName: ""
 
@@ -85,6 +91,13 @@ PageShell {
         RowLayout {
             Layout.fillWidth: true
             spacing: 16
+
+            DropdownButton {
+                objectName: "modSourceFilter"
+                options: modsPage.sourceOptions
+                value: Mods.sourceFilter
+                onPicked: (value) => Mods.sourceFilter = value
+            }
 
             Item { Layout.fillWidth: true }
 
@@ -192,6 +205,7 @@ PageShell {
             Layout.fillHeight: true
 
             ListView {
+                acceptedButtons: Qt.NoButton
                 id: modsView
                 anchors.fill: parent
                 anchors.bottomMargin: Dimensions.pagePad
@@ -258,6 +272,7 @@ PageShell {
                     required property string newVersion
                     required property string author
                     required property string description
+                    required property string source
                     required property string category
                     required property bool modEnabled
                     required property bool hasUpdate
@@ -346,6 +361,7 @@ PageShell {
                         newVersion: delegateRoot.newVersion
                         author: delegateRoot.author
                         description: delegateRoot.description
+                        source: delegateRoot.source
                         category: delegateRoot.category
                         modEnabled: delegateRoot.modEnabled
                         hasUpdate: delegateRoot.hasUpdate

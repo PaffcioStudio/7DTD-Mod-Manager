@@ -40,6 +40,7 @@ Item {
 
     HoverHandler { id: hover }
     TapHandler {
+        gesturePolicy: TapHandler.ReleaseWithinBounds
         id: tap
         onTapped: root.toggled(!root.checked)
     }

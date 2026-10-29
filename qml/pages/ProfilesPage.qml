@@ -409,7 +409,7 @@ PageShell {
                     }
 
                     HoverHandler { id: hoverCard }
-                    TapHandler { onTapped: page.openNew() }
+                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: page.openNew() }
                 }
             }
         }
@@ -1178,6 +1178,7 @@ PageShell {
                     }
 
                     ListView {
+                        acceptedButtons: Qt.NoButton
                         id: editorModsList
                         anchors.fill: parent
                         anchors.margins: 6

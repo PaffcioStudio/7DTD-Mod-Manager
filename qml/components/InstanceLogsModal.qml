@@ -46,6 +46,7 @@ Modal {
         Text { text: I18n.t("logs.tail"); color: Theme.textMuted; font.pixelSize: Typography.micro }
         Text { Layout.fillWidth: true; text: Logs.selectedPath; elide: Text.ElideMiddle; color: Theme.textSecondary; font.pixelSize: Typography.micro }
         ScrollView {
+            Component.onCompleted: contentItem.acceptedButtons = Qt.NoButton
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true

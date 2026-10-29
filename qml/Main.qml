@@ -33,9 +33,47 @@ ApplicationWindow {
     }
     ConfirmModal {
         id: missingGameDialog
+        cardWidth: 620
+        alternativeLabel: I18n.t("download.gameVersion.downloadAnyway")
+        onAlternativeConfirmed: Downloads.downloadDespiteMissingGame(token)
+        closeHandler: function() { close(); Downloads.resolveMissingGame(token, false) }
         property string token: ""
         onConfirmed: Downloads.resolveMissingGame(token, true)
         onRejected: Downloads.resolveMissingGame(token, false)
+    }
+
+    Connections {
+        target: Downloads
+        function onIncompatibleModFile(token, title, version) {
+            incompatibleFileDialog.enqueue(token, title, version)
+        }
+    }
+    ConfirmModal {
+        id: incompatibleFileDialog
+        property string token: ""
+        property var requests: []
+        function enqueue(requestToken, modTitle, version) {
+            requests.push({token: requestToken, name: modTitle, version: version})
+            showNext()
+        }
+        function showNext() {
+            if (token !== "" || requests.length === 0)
+                return
+            const request = requests.shift()
+            token = request.token
+            ask(I18n.t("download.compatibility.title"),
+                I18n.format("download.compatibility.warning", request),
+                I18n.t("download.gameVersion.downloadAnyway"), false)
+        }
+        function finish(accepted) {
+            const requestToken = token
+            token = ""
+            Downloads.resolveIncompatibleFile(requestToken, accepted)
+            Qt.callLater(showNext)
+        }
+        onConfirmed: finish(true)
+        onRejected: finish(false)
+        closeHandler: function() { close(); finish(false) }
     }
 
     width: Math.max(Boot.width || Settings.windowWidth || 1400, minimumWidth)
@@ -85,7 +123,7 @@ ApplicationWindow {
     // in each page. Long text is elided, with the full text on hover.
     readonly property var pageMeta: ({
         "dashboard": [I18n.t("dashboard.title"), I18n.t("dashboard.subtitle")],
-        "mods": [I18n.t("mods.title"), I18n.format("mods.caption", {shown: Mods.totalMods, total: Mods.totalMods, enabled: Mods.enabledCount})],
+        "mods": [I18n.t("mods.title"), I18n.format("mods.caption", {shown: Mods.visibleMods, total: Mods.totalMods, enabled: Mods.enabledCount})],
         "profiles": [I18n.t("instances.title"), I18n.t("instances.subtitle")],
         "protons": [I18n.t("nav.protons"), I18n.t("protons.help")],
         "steam_releases": [I18n.t("steamReleases.title"), I18n.t("steamReleases.subtitle")],
@@ -337,56 +375,96 @@ ApplicationWindow {
         id: modDrawer
     }
 
-    // ---- modal decyzji dla zestawu modów (overhaul) ---------------------- #
+    // Wybór dotyczy konkretnego pliku, także dodatków do overhaula.
     Modal {
         id: multiModModal
-        cardWidth: 560
+        cardWidth: 620
         title: I18n.t("main.multiMod.title")
         iconName: "package"
-
         property string itemRef: ""
         property string packTitle: ""
+        property string fileLabel: ""
+        property string fileType: ""
+        readonly property string fileTypeLabel: {
+            const names = {main: "main", optional: "optional", old: "old", other_version: "old", external: "external"}
+            return names[fileType] ? I18n.t("discover.drawer.fileType." + names[fileType]) : fileType || I18n.t("common.unknown")
+        }
         property int modCount: 0
-
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 12
-
-            Text {
-                Layout.fillWidth: true
-                text: I18n.format("main.multiMod.description", {title: multiModModal.packTitle, count: multiModModal.modCount})
-                color: Theme.text
-                font.pixelSize: Typography.body
-                font.family: Theme.fontFamily
-                wrapMode: Text.WordWrap
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: I18n.t("main.multiMod.choice")
-                color: Theme.textSecondary
-                font.pixelSize: Typography.small
-                font.family: Theme.fontFamily
-                wrapMode: Text.WordWrap
-                lineHeight: 1.35
+        property var requests: []
+        function enqueue(item, name, label, type, count) {
+            requests.push({item: item, name: name, label: label, type: type, count: count})
+            showNext()
+        }
+        function showNext() {
+            if (itemRef !== "")
+                return
+            while (requests.length > 0) {
+                const request = requests.shift()
+                if (!Downloads.hasInstallDecision(request.item))
+                    continue
+                itemRef = request.item
+                packTitle = request.name
+                fileLabel = request.label
+                fileType = request.type
+                modCount = request.count
+                open()
+                return
             }
         }
-
+        function finish(choice) {
+            if (itemRef === "")
+                return
+            const item = itemRef
+            itemRef = ""
+            close()
+            Downloads.resolveMulti(item, choice)
+            Qt.callLater(showNext)
+        }
+        closeHandler: function() { finish("cancel") }
+        Timer {
+            interval: 200
+            repeat: true
+            running: multiModModal.opened
+            onTriggered: if (!Downloads.hasInstallDecision(multiModModal.itemRef)) multiModModal.finish("cancel")
+        }
+        Text {
+            Layout.fillWidth: true
+            text: I18n.format("main.multiMod.description", {title: multiModModal.packTitle, count: multiModModal.modCount})
+            color: Theme.text
+            font.pixelSize: Typography.body
+            font.family: Theme.fontFamily
+            wrapMode: Text.WordWrap
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: multiModModal.fileLabel !== ""
+            text: I18n.format("main.multiMod.file", {file: multiModModal.fileLabel, type: multiModModal.fileTypeLabel})
+            color: Theme.textSecondary
+            font.pixelSize: Typography.small
+            font.family: Theme.fontFamily
+            wrapMode: Text.WrapAnywhere
+        }
+        Text {
+            Layout.fillWidth: true
+            text: I18n.t("main.multiMod.choice")
+            color: Theme.textSecondary
+            font.pixelSize: Typography.small
+            font.family: Theme.fontFamily
+            wrapMode: Text.WordWrap
+            lineHeight: 1.35
+        }
         footer: [
-            SecondaryButton {
-                text: I18n.t("main.multiMod.addMods")
-                onClicked: {
-                    Downloads.resolveMulti(multiModModal.itemRef, "mods")
-                    multiModModal.close()
-                }
-            },
             PrimaryButton {
+                text: I18n.t("main.multiMod.addMods")
+                onClicked: multiModModal.finish("mods")
+            },
+            SecondaryButton {
                 text: I18n.t("main.multiMod.createInstance")
-                icon: "plus"
-                onClicked: {
-                    Downloads.resolveMulti(multiModModal.itemRef, "instance")
-                    multiModModal.close()
-                }
+                onClicked: multiModModal.finish("instance")
+            },
+            SecondaryButton {
+                text: I18n.t("common.confirm.cancel")
+                onClicked: multiModModal.finish("cancel")
             }
         ]
     }
@@ -411,11 +489,8 @@ ApplicationWindow {
 
     Connections {
         target: Downloads
-        function onMultiModFound(itemRef, title, count) {
-            multiModModal.itemRef = itemRef
-            multiModModal.packTitle = title
-            multiModModal.modCount = count
-            multiModModal.open()
+        function onInstallTargetRequired(itemRef, title, fileLabel, fileType, count) {
+            multiModModal.enqueue(itemRef, title, fileLabel, fileType, count)
         }
     }
 

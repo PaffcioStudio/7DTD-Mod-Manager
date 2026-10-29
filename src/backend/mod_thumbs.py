@@ -160,3 +160,23 @@ def resolve_and_download(name: str, library_id: str) -> Path | None:
         return None
     _slug, url = found
     return download_thumb(url, library_id)
+
+
+def cache_web_thumbnails(slug: str, library_ids: list[str], url: str = "") -> None:
+    """Znany mod pobieramy po slugu, bez zgadywania po nazwie folderu."""
+    missing = [mod_id for mod_id in library_ids if not has_thumb(mod_id)]
+    if not missing:
+        return
+    try:
+        if not url:
+            from backend.scraper_client import SevenDaysModsClient
+            url = SevenDaysModsClient().get_metadata(slug).get("thumbnail") or ""
+        if not url.startswith("https://"):
+            return
+        first = download_thumb(url, missing[0])
+        if first is not None:
+            for mod_id in missing[1:]:
+                cache_banner(first, mod_id)
+    except Exception as exc:
+        # Awaria obrazka nie może zepsuć poprawnie zainstalowanego moda.
+        logger.warning("Thumbnail for %s: %s", slug, exc)

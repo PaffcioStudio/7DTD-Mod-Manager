@@ -36,6 +36,8 @@ class Mod:
     custom: bool = False             # added manually by the user
     game_version: str = ""           # wersja gry modu wg katalogu (slug; "" = nieznana)
 
+    source: str = ""
+
     # ------------------------------------------------------------------ #
     # convenience
     # ------------------------------------------------------------------ #

@@ -202,6 +202,7 @@ Modal {
                     }
 
                     ListView {
+                        acceptedButtons: Qt.NoButton
                         id: drivesView
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -399,6 +400,7 @@ Modal {
                     clip: true
 
                     ListView {
+                        acceptedButtons: Qt.NoButton
                         id: entriesView
                         anchors.fill: parent
                         anchors.margins: 8

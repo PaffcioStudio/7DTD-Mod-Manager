@@ -2,7 +2,7 @@
 
 A Linux desktop launcher and mod manager for **7 Days to Die**, built with Python, PySide6 and QML. Manage game releases from **Alpha 5 onward**, isolated instances, mods and overhauls in one application.
 
-**Current version:** 1.0.49
+**Current version:** 1.0.50
 **UI languages:** English (default) and Polish
 
 ## Screenshots
@@ -107,7 +107,7 @@ A Linux desktop launcher and mod manager for **7 Days to Die**, built with Pytho
 
 - **Linux** with a graphical desktop.
 - **Python 3.12** and virtual-environment support for running from source or building packages.
-- **PySide6 >= 6.6, < 7.0**, **requests** and **Pillow**, installed automatically by `venv.sh` into the local `.venv`.
+- **PySide6 >= 6.10, < 7.0**, **requests** and **Pillow**, installed automatically by `venv.sh` into the local `.venv`.
 - A **Steam account with access to 7 Days to Die** for authenticated game downloads, and **Proton** for launching downloaded Windows releases.
 - **Git** for Git-based modpack sources; **libarchive** for 7z/RAR extraction. Debian packages declare the libarchive dependency; source and AppImage users need it installed on the host.
 - For packaging: **rsync**, **dpkg-deb**, **curl** and **python3**. The build script downloads `appimagetool` when needed.

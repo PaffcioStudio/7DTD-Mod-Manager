@@ -13,6 +13,7 @@ by the tick() timer exactly as before.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -159,6 +160,9 @@ class DownloadItem:
         self.flavor = flavor                # "git" | "github" | "zip" | "mod"
         self.update_for = update_for        # library_id aktualizowanego wpisu (kind="update")
         self.chosen_file_ref = chosen_file_ref  # "hosted:<id>" / "external:<url>" (etap 13)
+        self.install_target = ""
+        self.allow_incompatible_file = False
+        self.ignore_missing_game = False
         self.install_game = install_game
         self.reinstall_game = False  # osobny staging dla reinstalacji Steam
         self.game_version = game_version    # wersja gry modu wg katalogu (slug, "" = nieznana)
@@ -344,6 +348,7 @@ class DownloadListModel(QAbstractListModel):
 class DownloadManager(QObject):
     """Exposed to QML as ``Downloads``."""
 
+    incompatibleModFile = Signal(str, str, str)
     missingGameVersion = Signal(str, str)  # confirmation token, required branch
     updateFinished = Signal(str)        # mod id
     activeCountChanged = Signal()
@@ -354,6 +359,7 @@ class DownloadManager(QObject):
     urlState = Signal(str, str)                # id, "downloading"/"paused"/"completed[:info]"/"failed:msg"/"cancelled"
     modpackInstalled = Signal(str)             # summary - ModManager reloads the library
     # zestaw modów (overhaul ze strony) - pytanie: osobna instancja czy mody
+    installTargetRequired = Signal(str, str, str, str, int)
     multiModFound = Signal(str, str, int)      # item_id, tytuł, liczba modów
     instancesRefreshNeeded = Signal()          # przeładuj rejestr instancji w UI
     # scraper mods (stage 9): id, title, subtitle, total_bytes (0 = no change)
@@ -373,6 +379,7 @@ class DownloadManager(QObject):
         # actions must be forwarded to that owner.
         self._game_versions = None
         self._pending_requests = {}
+        self._ignore_missing_game = False
         self._allow_missing_branch = False
         self._requested_game_branches = set()
         self._model = DownloadListModel(self)
@@ -504,7 +511,7 @@ class DownloadManager(QObject):
         self._stop_event.set()
         for item in self._model.items:
             item.pause_event.set()
-        for decision in self._multi_decisions.values():
+        for decision in list(self._multi_decisions.values()):
             decision["choice"] = "cancel"
             decision["event"].set()
         deadline = time.monotonic() + 35
@@ -597,6 +604,9 @@ class DownloadManager(QObject):
                 "pausable": item.pausable,
                 "game_version": item.game_version,
                 "install_game": item.install_game,
+                "ignore_missing_game": item.ignore_missing_game,
+                "allow_incompatible_file": item.allow_incompatible_file,
+                "install_target": item.install_target,
                 "reinstall_game": item.reinstall_game,
                 "status": item.status,
                 "total_bytes": int(item.total_bytes or 0),
@@ -654,6 +664,11 @@ class DownloadManager(QObject):
                 game_version=required_game_branch(str(rec.get("game_version") or "")),
                 install_game=bool(rec.get("install_game", False)),
             )
+            item.install_target = rec.get("install_target", "")
+            if item.install_target not in {"mods", "instance"}:
+                item.install_target = ""
+            item.allow_incompatible_file = bool(rec.get("allow_incompatible_file", False))
+            item.ignore_missing_game = bool(rec.get("ignore_missing_game", False))
             item.reinstall_game = bool(rec.get("reinstall_game", False))
             item.restored_from_queue = True
             if status == "paused":
@@ -874,7 +889,7 @@ class DownloadManager(QObject):
                 # explicitly after signal wiring during application startup.
                 if item.kind == "game":
                     continue
-                if (item.real and item.game_version
+                if (item.real and item.game_version and not item.ignore_missing_game
                         and not self._is_downloaded_game_version(item.game_version)):
                     if self._game_versions is None:
                         continue  # Wait until startup signal wiring is complete.
@@ -1076,10 +1091,21 @@ class DownloadManager(QObject):
         if item and item.status == "failed":
             duplicate = any(other is not item and other.status in ("queued", "downloading", "paused")
                             and other.kind == item.kind and other.ref_id.casefold() == item.ref_id.casefold()
+                            and (not other.chosen_file_ref or not item.chosen_file_ref
+                                 or other.chosen_file_ref == item.chosen_file_ref)
                             for other in self._model.items)
             if duplicate:
                 self._bus.toastKey("toast.downloads.alreadyDownloadedOrQueued", {}, "info")
                 return
+            if (not item.allow_incompatible_file and item.kind == "mod"
+                    and (item.subtitle.startswith("__I18N__:download.mod.incompatibleFile|")
+                         or item.subtitle.startswith("__I18N__:download.mod.noCompatibleFile|"))):
+                token = uuid.uuid4().hex
+                self._pending_requests[token] = lambda: self._retry_incompatible_file(item)
+                self.incompatibleModFile.emit(token, item.title, item.game_version)
+                return
+            if self._ignore_missing_game:
+                item.ignore_missing_game = True
             if self._allow_missing_branch:
                 item.install_game = True
                 item.game_version = self._game_branch_for_download(item.game_version)
@@ -1295,15 +1321,15 @@ class DownloadManager(QObject):
         """Return the concrete branch or raise before a mod/modpack download.
 
         The matching Windows copy must exist before the mod worker starts.
-        Confirmation permits queuing a missing branch as a dependency; it does
-        not permit installing the mod against a different version. Empty means
-        that the source did not provide a reliable requirement.
+        Potwierdzenie pozwala pobrać grę jako zależność albo pobrać sam mod.
+        Wymaganie wersji zostaje zapisane także po wyborze „Pobierz mimo to”.
+        Pusty wynik oznacza brak wiarygodnego wymagania w źródle.
         """
         required_branch = required_game_branch((game_version or "").strip())
         if not required_branch:
             return ""
         resolved = resolve_downloaded_branch(required_branch)
-        if not resolved and self._allow_missing_branch:
+        if not resolved and (self._allow_missing_branch or self._ignore_missing_game):
             return self._game_branch_for_download(required_branch)
         if not resolved:
             raise modpack_downloader.DownloadError(
@@ -1338,6 +1364,29 @@ class DownloadManager(QObject):
             callback()
         finally:
             self._allow_missing_branch = False
+
+    @Slot(str)
+    def downloadDespiteMissingGame(self, token: str) -> None:
+        callback = self._pending_requests.pop(token, None)
+        if callback is None:
+            return
+        self._ignore_missing_game = True
+        try:
+            callback()
+        finally:
+            self._ignore_missing_game = False
+
+    def _retry_incompatible_file(self, item: DownloadItem) -> None:
+        if self._find(item.id) is not item or item.status != "failed":
+            return
+        item.allow_incompatible_file = True
+        self.retryAt(item.id)
+
+    @Slot(str, bool)
+    def resolveIncompatibleFile(self, token: str, accepted: bool) -> None:
+        callback = self._pending_requests.pop(token, None)
+        if accepted and callback is not None:
+            callback()
 
     # ------------------------------------------------------------------ #
     # real URL downloads (migration stage 5)
@@ -1410,6 +1459,7 @@ class DownloadManager(QObject):
             game_version=required_branch or game_version,
             install_game=self._allow_missing_branch,
         )
+        item.ignore_missing_game = self._ignore_missing_game
         item.temp_dir = Path(tempfile.mkdtemp(prefix="mm-dl-", dir=fs.staging_dir()))
         self._model.append(item)
         self._promote_queued()
@@ -1484,6 +1534,7 @@ class DownloadManager(QObject):
             game_version=required_branch or game_version,
             install_game=self._allow_missing_branch,
         )
+        item.ignore_missing_game = self._ignore_missing_game
         self._model.append(item)
         self._persist_queue()
         self._promote_queued()
@@ -1500,8 +1551,12 @@ class DownloadManager(QObject):
     def startModDownloadWithFile(self, slug: str, file_ref: str) -> None:
         self._startModDownloadWithFile(slug, file_ref, "")
 
+    @Slot(str, str, str)
+    def startModDownloadWithFileOverride(self, slug: str, file_ref: str, game_version: str) -> None:
+        self._startModDownloadWithFile(slug, file_ref, game_version, allow_incompatible=True)
+
     def _startModDownloadWithFile(self, slug: str, file_ref: str,
-                                  game_version: str = "") -> None:
+                                  game_version: str = "", allow_incompatible: bool = False) -> None:
         """Pobiera mod z WYBRANYM plikiem z karty szczegółów (etap 13).
         file_ref: "hosted:<id>" (plik serwisu) albo "external:<url>"
         (link zewnętrzny GitHub/GitLab/CurseForge/direct)."""
@@ -1513,7 +1568,7 @@ class DownloadManager(QObject):
         try:
             required_branch = self._check_required_game_version(game_version, "Mod")
         except modpack_downloader.DownloadError:
-            self._ask_missing_game(game_version, lambda: self._startModDownloadWithFile(raw, file_ref, game_version))
+            self._ask_missing_game(game_version, lambda: self._startModDownloadWithFile(raw, file_ref, game_version, allow_incompatible))
             return
         try:
             slug_norm = parse_mod_url(raw)
@@ -1525,7 +1580,8 @@ class DownloadManager(QObject):
                 continue
             same_file = (item.chosen_file_ref or item.ref_id) == file_ref
             same_mod = item.kind == "mod" and item.ref_id.casefold() == slug_norm.casefold()
-            if (same_file or same_mod) and item.status in ("queued", "downloading", "paused", "completed"):
+            unresolved_active = same_mod and not item.chosen_file_ref and item.status in ("queued", "downloading", "paused")
+            if (same_file or unresolved_active) and item.status in ("queued", "downloading", "paused", "completed"):
                 self._bus.toastKey("toast.downloads.alreadyDownloadedOrQueued", {}, "info")
                 return
         item = DownloadItem(
@@ -1543,6 +1599,8 @@ class DownloadManager(QObject):
             game_version=required_branch or game_version,
             install_game=self._allow_missing_branch,
         )
+        item.allow_incompatible_file = allow_incompatible
+        item.ignore_missing_game = self._ignore_missing_game
         self._model.append(item)
         self._persist_queue()
         self._promote_queued()
@@ -1692,7 +1750,8 @@ class DownloadManager(QObject):
                 item.game_version = required_game_branch(item.game_version)
                 if item.game_version:
                     item.game_version = resolve_downloaded_branch(item.game_version) or item.game_version
-                if item.game_version and not self._is_downloaded_game_version(item.game_version):
+                if (item.game_version and not item.ignore_missing_game
+                        and not self._is_downloaded_game_version(item.game_version)):
                     raise modpack_downloader.DownloadError(
                         i18n_message("download.gameVersion.missing", {
                             "branch": item.game_version
@@ -1723,11 +1782,13 @@ class DownloadManager(QObject):
                             i18n_message("download.mod.fileMissing"))
                     if (not self._file_matches_selected_game_version(
                             main_file, selected_game_version, info)
-                            and not self._file_version_is_unknown(main_file, info)):
-                        raise modpack_downloader.DownloadError(
+                            and not self._file_version_is_unknown(main_file, info)
+                            and not item.allow_incompatible_file):
+                        self.urlState.emit(item.id, "confirm_compatibility:" +
                             i18n_message("download.mod.incompatibleFile", {
                                 "version": selected_game_version
                             }))
+                        return
                 elif item.chosen_file_ref.startswith("external:"):
                     ext_url = item.chosen_file_ref[len("external:"):]
                     chosen_ext = next(
@@ -1737,18 +1798,20 @@ class DownloadManager(QObject):
                             i18n_message("download.mod.externalMissing"))
                     if (not self._external_matches_selected_game_version(
                             chosen_ext, selected_game_version, info)
-                            and not self._external_version_is_unknown(chosen_ext, info)):
-                        raise modpack_downloader.DownloadError(
+                            and not self._external_version_is_unknown(chosen_ext, info)
+                            and not item.allow_incompatible_file):
+                        self.urlState.emit(item.id, "confirm_compatibility:" +
                             i18n_message("download.mod.incompatibleFile", {
                                 "version": selected_game_version
                             }))
+                        return
                 else:
                     # Przy aktywnym filtrze wersji nie wolno brać "pierwszego"
                     # pliku. Wybieramy wyłącznie plik rozpoznany jako zgodny.
                     if selected_game_version:
                         compatible_files = [
                             f for f in info.files
-                            if self._file_matches_selected_game_version(
+                            if item.allow_incompatible_file or self._file_matches_selected_game_version(
                                 f, selected_game_version, info)
                         ]
                         if compatible_files:
@@ -1759,22 +1822,23 @@ class DownloadManager(QObject):
                         else:
                             compatible_external = [
                                 link for link in info.external_links
-                                if self._external_matches_selected_game_version(
+                                if item.allow_incompatible_file or self._external_matches_selected_game_version(
                                     link, selected_game_version, info)
                             ]
                             if not compatible_external:
-                                logger.warning(
-                                    "No compatible mod file: slug=%s selected=%s "
+                                logger.info(
+                                    "File compatibility unconfirmed: slug=%s selected=%s "
                                     "declared=%s hosted=%s external=%s",
                                     info.slug, selected_game_version,
                                     info.game_versions,
                                     [(f.id, f.label, f.filename) for f in info.files],
                                     [(link.id, link.label) for link in info.external_links],
                                 )
-                                raise modpack_downloader.DownloadError(
+                                self.urlState.emit(item.id, "confirm_compatibility:" +
                                     i18n_message("download.mod.noCompatibleFile", {
                                         "version": selected_game_version
                                     }))
+                                return
                             chosen_ext = compatible_external[0]
                     else:
                         # Bez filtra zachowujemy dotychczasowy priorytet dla
@@ -1825,6 +1889,10 @@ class DownloadManager(QObject):
                 # ``V2 Mods``), a nazwa konkretnego pliku/linku wskazywać np.
                 # ``V2.6``. W takim przypadku instancja ma dostać ``v2.6``,
                 # a nie pustą wartość oznaczającą Steam.
+                if main_file is not None:
+                    item.chosen_file_ref = "hosted:" + main_file.id
+                elif chosen_ext is not None:
+                    item.chosen_file_ref = "external:" + chosen_ext.url
                 artifact_versions: list[str] = []
                 if main_file is not None:
                     artifact_versions = detect_artifact_game_versions(
@@ -1850,11 +1918,13 @@ class DownloadManager(QObject):
                     inferred_branch = select_concrete_game_version(
                         selected_game_version, list(info.game_versions or []))
 
-                install_branch = inferred_branch or item.game_version
+                install_branch = (item.game_version if item.allow_incompatible_file
+                                  else inferred_branch or item.game_version)
                 if install_branch:
                     install_branch = required_game_branch(install_branch)
                     install_branch = resolve_downloaded_branch(install_branch) or install_branch
-                    if not self._is_downloaded_game_version(install_branch):
+                    if (not item.ignore_missing_game
+                            and not self._is_downloaded_game_version(install_branch)):
                         raise modpack_downloader.DownloadError(
                             i18n_message("download.gameVersion.missing", {
                                 "branch": install_branch
@@ -1870,7 +1940,8 @@ class DownloadManager(QObject):
                                  or info.current_version or "latest")
                 suffix = (Path(main_file.filename).suffix
                           if main_file and main_file.filename else "") or ".zip"
-                dest = fs.downloads_dir() / f"{info.slug}-{version}{suffix}"
+                artifact_key = hashlib.sha256(item.chosen_file_ref.encode()).hexdigest()[:12]
+                dest = fs.downloads_dir() / f"{info.slug}-{version}-{artifact_key}{suffix}"
 
                 download_url: str | None = None
                 if chosen_ext is not None:
@@ -1884,7 +1955,7 @@ class DownloadManager(QObject):
                                 i18n_message("download.mod.unsupportedLink"))
                         download_url, _sz, ext_name = resolved
                     ext_name = Path(ext_name.replace("\\", "/")).name
-                    dest = fs.downloads_dir() / f"{info.slug}-{version}-{ext_name}"
+                    dest = fs.downloads_dir() / f"{info.slug}-{version}-{artifact_key}-{ext_name}"
                 elif main_file is not None:
                     self.modMeta.emit(item.id, info.title, subtitle,
                                       main_file.size)
@@ -1905,7 +1976,8 @@ class DownloadManager(QObject):
                     if ext_size > 0:
                         self.modMeta.emit(item.id, "", "", ext_size)
                     filename = Path(filename.replace("\\", "/")).name
-                    dest = fs.downloads_dir() / f"{info.slug}-{version}-{filename}"
+                    artifact_key = hashlib.sha256(link.url.encode()).hexdigest()[:12]
+                    dest = fs.downloads_dir() / f"{info.slug}-{version}-{artifact_key}-{filename}"
 
                 if modpack_downloader._zip_already_complete(dest):
                     # D9: transfer jest limitowany - archiwum już na dysku,
@@ -1997,61 +2069,27 @@ class DownloadManager(QObject):
                         self.urlState.emit(item.id, "completed:" + "; ".join(parts))
                         return
 
-                # Overhaul ma własną semantykę: jego Mods/ pozostaje wyłącznie
-                # w dedykowanej instancji i nigdy nie trafia do globalnej
-                # Biblioteki. Kategorie są pobierane ze strony moda.
-                categories = {c.casefold() for c in getattr(info, "categories", [])}
-                is_overhaul = any("overhaul" in category for category in categories)
-                if item.update_for is None and is_overhaul:
-                    install_log.info(
-                        "MOD is an OVERHAUL (categories=%s) - dedicated instance path",
-                        sorted(categories))
-                    entry_count = self._install_overhaul_as_instance(
-                        info.slug, info.title or info.slug, mod_folders, cancel,
-                        game_version=item.game_version,
-                        loader_root=bepinex_loader.find_loader_root(temp_dir, mods_root))
-                    self.instancesRefreshNeeded.emit()
-                    modpack_downloader.cleanup_temp_dir(temp_dir)
-                    temp_dir = None
-                    item.temp_dir = None
-                    self.urlState.emit(
-                        item.id,
-                        "completed:" + i18n_message("download.mod.createdOverhaul", {
-                            "count": entry_count
-                        }))
-                    return
-
-                # zestaw modów (kilka modów bez kategorii Overhaul): pytamy
-                # użytkownika czy ma powstać osobna instancja.
-                if item.update_for is None and len(mod_folders) > 1:
-                    install_log.info(
-                        "MOD multi-set (%d mods) - asking user for decision",
+                # Kategorie opisują zawartość, a nie sposób instalacji.
+                # Nawet plik z działu Overhaul może być zwykłym modem lub addonem.
+                if item.update_for is None:
+                    selected_file = main_file or chosen_ext
+                    choice = self._choose_install_target(
+                        item, info.title or info.slug,
+                        (selected_file.label or selected_file.filename) if selected_file else "",
+                        selected_file.file_type if selected_file else "",
                         len(mod_folders))
-                    decision = self._multi_decisions.setdefault(
-                        item.id, {"event": threading.Event(), "choice": ""})
-                    decision["event"].clear()
-                    item.subtitle = i18n_message("download.mod.foundMods", {
-                        "count": len(mod_folders)
-                    })
-                    self._model.touch(self._model.row_of(item.id))
-                    self.multiModFound.emit(item.id, info.title or info.slug,
-                                            len(mod_folders))
-                    decision["event"].wait()
-                    check_cancel()
-                    install_log.info("MOD multi-set decision: %r",
-                                     decision["choice"])
-                    if decision["choice"] == "instance":
-                        entry_count = self._install_multi_as_instance(
-                            info.slug, info.title or info.slug,
-                            mod_folders, cancel,
-                            game_version=item.game_version)
+                    if choice == "instance":
+                        entry_count = self._install_overhaul_as_instance(
+                            info.slug, info.title or info.slug, mod_folders, cancel,
+                            game_version=item.game_version,
+                            loader_root=bepinex_loader.find_loader_root(temp_dir, mods_root))
                         self.instancesRefreshNeeded.emit()
                         modpack_downloader.cleanup_temp_dir(temp_dir)
                         temp_dir = None
                         item.temp_dir = None
                         self.urlState.emit(
                             item.id,
-                            "completed:" + i18n_message("download.mod.createdInstance", {
+                            "completed:" + i18n_message("download.mod.createdOverhaul", {
                                 "count": entry_count
                             }))
                         return
@@ -2059,6 +2097,10 @@ class DownloadManager(QObject):
                 report = library_ops.install_modpack_to_library(
                     mods_root, source=f"web:{info.slug}", enable=False,
                     cancel_event=cancel, game_version=item.game_version)
+                from backend import mod_thumbs
+                mod_thumbs.cache_web_thumbnails(
+                    info.slug, [entry.library_id for entry in report.imported],
+                    getattr(info, "thumbnail", ""))
                 if not report.errors and (report.imported or report.already_present):
                     downloads_cleanup.register_installed(
                         dest.name, dest.stat().st_size, source=f"web:{info.slug}")
@@ -2077,6 +2119,8 @@ class DownloadManager(QObject):
                 temp_dir = None
                 item.temp_dir = None
                 self.urlState.emit(item.id, "completed:" + "; ".join(parts))
+            except modpack_downloader.DownloadPaused:
+                self.urlState.emit(item.id, "paused")
             except OperationCancelled:
                 if self._shutting_down:
                     return
@@ -2110,14 +2154,49 @@ class DownloadManager(QObject):
         if total > 0:
             item.total_bytes = max(1, total)
         self._model.touch(self._model.row_of(item_id))
+        self.activeMapChanged.emit()
+
+    def _choose_install_target(self, item: DownloadItem, title: str,
+                               file_label: str, file_type: str, count: int) -> str:
+        if item.install_target in {"mods", "instance"}:
+            return item.install_target
+        decision = {"event": threading.Event(), "choice": ""}
+        self._multi_decisions[item.id] = decision
+        self.modMeta.emit(item.id, "", i18n_message("download.mod.foundMods", {"count": count}), 0)
+        self.installTargetRequired.emit(item.id, title, file_label, file_type, count)
+        try:
+            while not decision["event"].wait(0.1):
+                if item.cancel_event.is_set() or self._stop_event.is_set():
+                    raise OperationCancelled(i18n_message("common.operationCancelled"))
+                if item.pause_event.is_set():
+                    raise modpack_downloader.DownloadPaused(i18n_message("download.status.paused"))
+            if (decision["choice"] not in {"mods", "instance"}
+                    or item.cancel_event.is_set() or self._stop_event.is_set()):
+                raise OperationCancelled(i18n_message("common.operationCancelled"))
+            if item.pause_event.is_set():
+                raise modpack_downloader.DownloadPaused(i18n_message("download.status.paused"))
+            return decision["choice"]
+        finally:
+            self._multi_decisions.pop(item.id, None)
+
+    @Slot(str, result=bool)
+    def hasInstallDecision(self, item_id: str) -> bool:
+        item = self._find(item_id)
+        decision = self._multi_decisions.get(item_id)
+        return (decision is not None and not decision["event"].is_set() and item is not None
+                and not item.cancel_event.is_set() and not item.pause_event.is_set())
 
     @Slot(str, str)
     def resolveMulti(self, item_id: str, choice: str) -> None:
-        """Decyzja UI dla zestawu modów (overhaul): "instance" albo "mods".
-        Zwalnia worker, który czekał na Event."""
+        if choice not in {"instance", "mods", "cancel"}:
+            return
         info = self._multi_decisions.get(item_id)
         if info is None or info["event"].is_set():
             return
+        item = self._find(item_id)
+        if item is not None and choice != "cancel":
+            item.install_target = choice
+            self._persist_queue()
         info["choice"] = choice
         info["event"].set()
 
@@ -2301,7 +2380,8 @@ class DownloadManager(QObject):
                 item.game_version = required_game_branch(item.game_version)
                 if item.game_version:
                     item.game_version = resolve_downloaded_branch(item.game_version) or item.game_version
-                if item.game_version and not self._is_downloaded_game_version(item.game_version):
+                if (item.game_version and not item.ignore_missing_game
+                        and not self._is_downloaded_game_version(item.game_version)):
                     raise modpack_downloader.DownloadError(
                         i18n_message("download.gameVersion.missing", {
                             "branch": item.game_version
@@ -2498,12 +2578,18 @@ class DownloadManager(QObject):
             self._bus.toastKey("toast.downloads.cancelled", {"title": item.title}, "info")
             self._emit_counts()
             return
-        if state.startswith("failed:"):
+        if state.startswith(("failed:", "confirm_compatibility:")):
             item.status = "failed"
             item.speed = 0.0
             item.subtitle = state.split(":", 1)[1]
             self._model.touch_all()
             self._emit_counts()
+            if (item.kind == "mod" and not item.allow_incompatible_file
+                    and item.subtitle.startswith(("__I18N__:download.mod.incompatibleFile|",
+                                                  "__I18N__:download.mod.noCompatibleFile|"))):
+                # Brak pewnego dopasowania wymaga decyzji, a nie błędu sieci.
+                self.retryAt(item.id)
+                return
             if item.subtitle.startswith("__I18N__:download.gameVersion.missing|"):
                 try:
                     branch = json.loads(item.subtitle.split("|", 1)[1])["branch"]

@@ -76,6 +76,7 @@ class ModListModel(QAbstractListModel):
     TagsRole = IdRole + 19
     ThumbUrlRole = IdRole + 20
     GameVersionRole = IdRole + 21
+    SourceRole = IdRole + 22
 
     ROLES = {
         IdRole: b"modId",
@@ -100,6 +101,7 @@ class ModListModel(QAbstractListModel):
         TagsRole: b"tags",
         ThumbUrlRole: b"thumbUrl",
         GameVersionRole: b"gameVersion",
+        SourceRole: b"source",
     }
 
     def __init__(self, parent=None) -> None:
@@ -144,6 +146,7 @@ class ModListModel(QAbstractListModel):
             self.TagsRole: mod.tags,
             self.ThumbUrlRole: self._thumbs.get(mod.id, ""),
             self.GameVersionRole: mod.game_version,
+            self.SourceRole: mod.source,
         }
         return attr.get(role)
 
@@ -269,12 +272,14 @@ class ModProxyModel(QSortFilterProxyModel):
     MODE_CONFLICTS = "conflicts"
 
     searchTextChanged = Signal()
+    sourceFilterChanged = Signal()
     filterModeChanged = Signal()
     sortModeChanged = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._search = ""
+        self._source_filter = "all"
         self._filter = self.MODE_ALL
         self._sort = "custom"
         self._sort_desc = False
@@ -293,6 +298,21 @@ class ModProxyModel(QSortFilterProxyModel):
         self.beginFilterChange()
         self._search = value
         self.searchTextChanged.emit()
+        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+
+    @Property(str, notify=sourceFilterChanged)
+    def sourceFilter(self) -> str:
+        return self._source_filter
+
+    @sourceFilter.setter
+    def sourceFilter(self, value: str) -> None:
+        if value not in {"all", "discover", "manual"}:
+            value = "all"
+        if value == self._source_filter:
+            return
+        self.beginFilterChange()
+        self._source_filter = value
+        self.sourceFilterChanged.emit()
         self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
 
     @Property(str, notify=filterModeChanged)
@@ -381,6 +401,12 @@ class ModProxyModel(QSortFilterProxyModel):
         has_update = bool(index.data(ModListModel.HasUpdateRole))
         in_conflict = bool(index.data(ModListModel.InConflictRole))
 
+        source = index.data(ModListModel.SourceRole) or ""
+        if self._source_filter == "discover" and not source.startswith("web:"):
+            return False
+        if self._source_filter == "manual" and source not in {"import", "orphan", "modpack"}:
+            return False
+
         if self._search:
             needle = self._search.casefold()
             haystack = " ".join([name, author, category, description,
@@ -426,6 +452,7 @@ class ModProxyModel(QSortFilterProxyModel):
 class ModManager(QObject):
     countsChanged = Signal()
     searchTextChanged = Signal()
+    sourceFilterChanged = Signal()
     filterModeChanged = Signal()
     sortModeChanged = Signal()
     modChanged = Signal(str)          # a single mod's data changed
@@ -469,6 +496,10 @@ class ModManager(QObject):
         # Filtering changes the model immediately, but without forwarding the
         # notify signal QML bindings such as FilterChip.active remain stale.
         self._proxy.filterModeChanged.connect(self.filterModeChanged.emit)
+        self._proxy.sourceFilterChanged.connect(self.sourceFilterChanged.emit)
+        self._proxy.rowsInserted.connect(self._notify_counts)
+        self._proxy.rowsRemoved.connect(self._notify_counts)
+        self._proxy.modelReset.connect(self._notify_counts)
 
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -501,6 +532,7 @@ class ModManager(QObject):
         QTimer.singleShot(9000, self._auto_check_if_enabled)
 
         # etap 17: miniatury ikon modów - ściągane w tle przy starcie
+        self._thumb_rescan_pending = False
         self._thumb_busy = False
         self._thumb_status = ""
         self._thumb_failed: set[str] = set()   # w tej sesji już nie ponawiamy
@@ -591,15 +623,18 @@ class ModManager(QObject):
     # ------------------------------------------------------------------ #
     def _start_thumb_scan(self) -> None:
         if self._thumb_busy:
+            self._thumb_rescan_pending = True
             return
         todo = []
         for mod in self._model.mods:
             entry = self.library_entry(mod.id)
-            if entry is None or mod_thumbs.has_thumb(entry.library_id):
+            if (entry is None or mod_thumbs.has_thumb(entry.library_id)
+                    or entry.library_id in self._thumb_failed):
                 continue
             todo.append((mod.id, entry))
         if not todo:
             return
+        todo.sort(key=lambda item: not item[1].source.startswith("web:"))
         self._thumb_busy = True
         self.thumbStatusPropChanged.emit()
         self._bus.toastKey("toast.mods.thumbFetchStarted", {"count": len(todo)}, "info")
@@ -635,8 +670,12 @@ class ModManager(QObject):
                 if index:
                     _time.sleep(0.9)
                 try:
-                    path = mod_thumbs.resolve_and_download(
-                        name, entry.library_id)
+                    slug = mod_updates.slug_from_source(entry.source)
+                    if slug:
+                        mod_thumbs.cache_web_thumbnails(slug, [entry.library_id])
+                        path = mod_thumbs.thumb_path(entry.library_id)
+                    else:
+                        path = mod_thumbs.resolve_and_download(name, entry.library_id)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Thumbnail %s: %s", name, exc)
                     path = None
@@ -660,6 +699,9 @@ class ModManager(QObject):
         self.thumbStatusPropChanged.emit()
 
     def _on_thumb_scan_finished(self, added: int, failed: int) -> None:
+        if self._thumb_rescan_pending:
+            self._thumb_rescan_pending = False
+            QTimer.singleShot(0, self._start_thumb_scan)
         self._thumb_busy = False
         self._thumb_status = ""
         self.thumbStatusPropChanged.emit()
@@ -745,6 +787,18 @@ class ModManager(QObject):
     @searchText.setter
     def searchText(self, value: str) -> None:
         self._proxy.searchText = value
+
+    @Property(str, notify=sourceFilterChanged)
+    def sourceFilter(self) -> str:
+        return self._proxy.sourceFilter
+
+    @sourceFilter.setter
+    def sourceFilter(self, value: str) -> None:
+        self._proxy.sourceFilter = value
+
+    @Property(int, notify=countsChanged)
+    def visibleMods(self) -> int:
+        return self._proxy.rowCount()
 
     @Property(str, notify=filterModeChanged)
     def filterMode(self) -> str:
@@ -847,6 +901,7 @@ class ModManager(QObject):
 
     def _reload_library(self) -> None:
         self._library_entries = library_model.load_library_entries()
+        self._model.set_thumbs(mod_thumbs.preload_urls())
         self._activation = library_model.load_activation_state()
 
     def _build_mods_from_library(self) -> list[Mod]:
@@ -870,6 +925,7 @@ class ModManager(QObject):
                     name=entry.title,
                     author=entry.author or i18n_message("common.unknown"),
                     category="Library",
+                    source=entry.source,
                     version=entry.version or "?",
                     new_version="",
                     enabled=self._activation.is_enabled_for(entry.library_id),
@@ -967,6 +1023,7 @@ class ModManager(QObject):
         self._persist_later()
         self._notify_counts()
         self._scan_library_async()
+        self._start_thumb_scan()
         if imported:
             self._bus.toastKey("toast.mods.imported", {"count": imported}, "success")
         if already:
@@ -985,6 +1042,7 @@ class ModManager(QObject):
         self._notify_counts()
         if self._library_entries:
             self._scan_library_async()
+            self._start_thumb_scan()
 
     # ------------------------------------------------------------------ #
     # slots (called from QML)
@@ -1160,6 +1218,8 @@ class ModManager(QObject):
         self._notify_counts()
         if self._library_entries:
             self._scan_library_async()
+        self._thumb_failed.clear()
+        self._start_thumb_scan()
         if imported:
             self._bus.toastKey("toast.mods.libraryRefreshedWithImports", {"count": len(self._library_entries), "imported": imported}, "success")
         elif self._library_entries:

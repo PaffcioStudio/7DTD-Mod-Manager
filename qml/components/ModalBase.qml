@@ -71,10 +71,13 @@ Item {
 
     Behavior on opacity { NumberAnimation { duration: Theme.normal; easing.type: Easing.OutCubic } }
     onOpenedChanged: {
-        if (opened)
+        if (opened) {
+            guardTimer.stop()
+            closeGuard = false
+        } else {
             beginCloseGuard()
-        else
             closePopupsIn(contentCol)
+        }
     }
 
     Rectangle {
@@ -89,12 +92,14 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.AllButtons
+            onWheel: (wheel) => { wheel.accepted = true }
         }
     }
 
 
     Item {
         id: center
+        enabled: root.opened
         anchors.centerIn: parent
         width: Math.min(root.cardWidth, root.width - 48)
         height: cardLayout.implicitHeight + 48

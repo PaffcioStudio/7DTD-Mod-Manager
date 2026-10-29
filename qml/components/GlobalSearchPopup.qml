@@ -75,11 +75,26 @@ Item {
             }
 
             Flickable {
+                id: searchResultsFlick
+                acceptedButtons: Qt.NoButton
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(400, resultsColumn.implicitHeight)
                 clip: true
                 contentHeight: resultsColumn.implicitHeight
                 boundsBehavior: Flickable.StopAtBounds
+
+                WheelHandler {
+                    target: null
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: (event) => {
+                        const maxY = Math.max(0, searchResultsFlick.contentHeight - searchResultsFlick.height)
+                        if (maxY <= 0) { event.accepted = false; return }
+                        searchResultsFlick.cancelFlick()
+                        const step = Theme.wheelDelta(event.pixelDelta.y, event.angleDelta.y)
+                        searchResultsFlick.contentY = Math.max(0, Math.min(maxY, searchResultsFlick.contentY - step))
+                        event.accepted = true
+                    }
+                }
 
                 ColumnLayout {
                     id: resultsColumn
@@ -166,6 +181,7 @@ Item {
 
                                 HoverHandler { id: hover }
                                 TapHandler {
+                                    gesturePolicy: TapHandler.ReleaseWithinBounds
                                     onTapped: root.resultClicked(
                                         modelData.kind,
                                         modelData.id,

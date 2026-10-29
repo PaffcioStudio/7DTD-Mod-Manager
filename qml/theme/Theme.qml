@@ -102,20 +102,15 @@ QtObject {
     // miały różne kroki (48 / 140 px) i różne prędkości flicka, przez co
     // dokładnie ten sam ruch potrafił przewijać ekran o zupełnie inną
     // odległość.
-    readonly property real wheelMouseStep: 88
+    readonly property real wheelMouseStep: 360
     readonly property real wheelPixelLimit: 96
 
     function wheelDelta(pixelY, angleY) {
-        let delta = Math.abs(pixelY) > 0.001
-            ? pixelY
-            : (angleY / 120.0) * wheelMouseStep
-
-        // Touchpady potrafią wysłać pojedyncze bardzo duże delty.
-        // Limit utrzymuje przewidywalne zachowanie bez sztucznej akceleracji.
-        if (Math.abs(pixelY) > 0.001)
-            delta = Math.max(-wheelPixelLimit, Math.min(wheelPixelLimit, delta))
-
-        return delta
+        // Kółko może wysyłać kilka małych delt zamiast jednego ząbka.
+        // Każdą przeliczamy z kąta, żeby sterownik nie spowalniał przewijania.
+        if (Math.abs(angleY) > 0.001)
+            return (angleY / 120.0) * wheelMouseStep
+        return Math.max(-wheelPixelLimit, Math.min(wheelPixelLimit, pixelY))
     }
 
     // ------------------------------------------------------------------ #

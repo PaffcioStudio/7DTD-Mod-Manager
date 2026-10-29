@@ -17,6 +17,9 @@ from services import filesystem_service as fs
 from backend.events import EventBus
 
 
+REAL_START_MOD_WORKER = dm.DownloadManager._start_mod_worker
+
+
 class Mods(QObject):
     demoReset = Signal()
 
@@ -436,3 +439,302 @@ def test_cached_zip_with_corrupted_payload_is_rejected(tmp_path):
     dest.write_bytes(data)
     assert zipfile.is_zipfile(dest)
     assert not pack._zip_already_complete(dest)
+
+
+@pytest.mark.parametrize('source', ['file', 'mod', 'url'])
+def test_download_anyway_skips_game_and_preserves_requirement(manager, monkeypatch, source):
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: '')
+    steam = SimpleNamespace(busy=False, download=Mock())
+    manager.setGameVersionsManager(steam)
+    tokens = []
+    manager.missingGameVersion.connect(lambda token, branch: tokens.append(token))
+    if source == 'file':
+        manager.startModDownloadWithFileVersion('example-mod', 'hosted:1', 'alpha19')
+    elif source == 'mod':
+        manager.startModDownloadWithVersion('example-mod', 'alpha19')
+    else:
+        manager.startUrlDownloadNamed('https://example.test/mod.zip', 'Mod', 'alpha19')
+    manager.downloadDespiteMissingGame(tokens[0])
+    entry, = manager._model.items
+    assert entry.status == 'downloading'
+    assert entry.game_version == 'alpha19.6'
+    assert entry.ignore_missing_game and not entry.install_game
+    steam.download.assert_not_called()
+    assert not manager._ignore_missing_game
+    assert not manager._pending_requests
+    manager.downloadDespiteMissingGame(tokens[0])
+    assert len(manager._model.items) == 1
+    manager._persist_queue()
+    manager._model.clear()
+    manager._restore_queue()
+    restored, = manager._model.items
+    assert restored.ignore_missing_game
+    assert restored.game_version == 'alpha19.6'
+
+
+@pytest.mark.parametrize('accepted', [False, True])
+def test_retry_incompatible_mod_requires_confirmation(manager, monkeypatch, accepted):
+    monkeypatch.setattr(manager, '_is_downloaded_game_version', lambda _: True)
+    entry = item(status='failed', branch='public')
+    entry.chosen_file_ref = 'hosted:chosen'
+    entry.subtitle = '__I18N__:download.mod.incompatibleFile|{"version":"public"}'
+    manager._model.append(entry)
+    prompts = []
+    manager.incompatibleModFile.connect(lambda *args: prompts.append(args))
+    manager.retryAt(entry.id)
+    assert entry.status == 'failed' and not entry.allow_incompatible_file
+    token, _, version = prompts.pop()
+    assert version == 'public'
+    manager.resolveIncompatibleFile(token, accepted)
+    assert entry.allow_incompatible_file is accepted
+    assert entry.status == ('downloading' if accepted else 'failed')
+    assert entry.chosen_file_ref == 'hosted:chosen'
+    assert not manager._pending_requests
+    if accepted:
+        manager._persist_queue()
+        manager._model.clear()
+        manager._restore_queue()
+        assert manager._model.items[0].allow_incompatible_file
+
+
+@pytest.mark.parametrize('override', [False, True])
+@pytest.mark.parametrize('filename', ['WMMZAirdropSpawnZeds.zip', 'Airdrop for V3.2.zip'])
+def test_worker_obeys_explicit_file_override_for_multiversion_mod(manager, monkeypatch, override, filename):
+    from backend.scraper_client import ModInfo, ModFile
+    file = ModFile(id='chosen', media_id='', filename=filename,
+                   size=1, label=filename, file_type='main',
+                   version='3.2.9.4', scan_status='clean')
+    info = ModInfo(id='mod', slug='airdrop-spawn-zeds-v32-b9', title='Airdrop Spawn Zeds',
+                   url='https://7daystodiemods.com/mods/airdrop-spawn-zeds-v32-b9',
+                   game_versions=['V3 Mods', 'V2 Mods'], files=[file])
+    client = Mock()
+    client.get_mod.return_value = info
+    client.resolve_download_url.side_effect = RuntimeError('arrived_at_download')
+    monkeypatch.setattr(dm, 'SevenDaysModsClient', lambda: client)
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: 'public')
+    monkeypatch.setattr(manager, '_is_downloaded_game_version', lambda _: True)
+    def thread(target, **kwargs):
+        obj = Mock()
+        obj.start.side_effect = target
+        obj.is_alive.return_value = False
+        return obj
+    monkeypatch.setattr(dm.threading, 'Thread', thread)
+    entry = item(status='downloading', branch='v3.4' if 'for' in filename else 'public')
+    entry.chosen_file_ref = 'hosted:chosen'
+    entry.allow_incompatible_file = override
+    manager._model.append(entry)
+    REAL_START_MOD_WORKER(manager, entry)
+    if override:
+        client.resolve_download_url.assert_called_once_with('mod', 'chosen')
+        assert 'arrived_at_download' in entry.subtitle
+        assert entry.game_version == 'public'
+    else:
+        client.resolve_download_url.assert_not_called()
+        assert 'incompatibleFile' in entry.subtitle
+
+
+def test_file_override_survives_missing_game_confirmation(manager, monkeypatch):
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: '')
+    tokens = []
+    manager.missingGameVersion.connect(lambda token, branch: tokens.append(token))
+    manager.startModDownloadWithFileOverride('example-mod', 'hosted:1', 'v3')
+    manager.downloadDespiteMissingGame(tokens.pop())
+    entry, = manager._model.items
+    assert entry.allow_incompatible_file and entry.ignore_missing_game
+    assert entry.status == 'downloading'
+
+
+@pytest.mark.parametrize('accepted', [False, True])
+def test_tile_download_requests_compatibility_confirmation_without_error(manager, monkeypatch, caplog, accepted):
+    from backend.scraper_client import ModInfo, ModFile
+    files = [ModFile(id='old', media_id='', filename='Old.zip', size=1,
+                     label='Old.zip', file_type='old', version='Latest', scan_status='clean'),
+             ModFile(id='main', media_id='', filename='WMMWorkstationMaterialTimer.zip', size=1,
+                     label='WMMWorkstationMaterialTimer - V3.2 b9', file_type='main',
+                     version='3.2.9.4', scan_status='clean')]
+    info = ModInfo(id='mod', slug='workstation-material-timer-v32-b9', title='Workstation Material Timer',
+                   url='https://7daystodiemods.com/mods/workstation-material-timer-v32-b9',
+                   game_versions=['V3 Mods', 'V2 Mods'], files=files)
+    client = Mock()
+    client.get_mod.return_value = info
+    client.resolve_download_url.side_effect = RuntimeError('arrived_at_download')
+    monkeypatch.setattr(dm, 'SevenDaysModsClient', lambda: client)
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: 'public')
+    monkeypatch.setattr(manager, '_is_downloaded_game_version', lambda _: True)
+    def thread(target, **kwargs):
+        obj = Mock()
+        obj.start.side_effect = target
+        obj.is_alive.return_value = False
+        return obj
+    monkeypatch.setattr(dm.threading, 'Thread', thread)
+    prompts = []
+    manager.incompatibleModFile.connect(lambda *args: prompts.append(args))
+    entry = item(status='downloading', branch='public')
+    manager._model.append(entry)
+    REAL_START_MOD_WORKER(manager, entry)
+    assert len(prompts) == 1
+    assert not any(r.levelname == 'ERROR' for r in caplog.records)
+    client.resolve_download_url.assert_not_called()
+    manager.resolveIncompatibleFile(prompts[0][0], accepted)
+    if accepted:
+        REAL_START_MOD_WORKER(manager, entry)
+        client.resolve_download_url.assert_called_once_with('mod', 'main')
+    else:
+        assert entry.status == 'failed' and not entry.allow_incompatible_file
+        client.resolve_download_url.assert_not_called()
+
+
+@pytest.mark.parametrize('choice', ['mods', 'instance', 'cancel'])
+@pytest.mark.parametrize('source,file_type,categories', [
+    ('tile', 'main', ['Food & Drink', 'Overhaul']),
+    ('sidebar', 'main', ['Food & Drink', 'Overhaul']),
+    ('sidebar', 'optional', ['Gameplay', 'Overhaul']),
+    ('tile', 'main', ['Overhaul']),
+    ('sidebar', 'optional', ['Gameplay']),
+])
+def test_web_archive_requires_explicit_install_target(manager, monkeypatch, choice, source, file_type, categories):
+    import zipfile
+    from backend import library, instances, mod_thumbs
+    from backend.scraper_client import ModInfo, ModFile
+    file = ModFile(id='selected', media_id='', filename='Cooking.zip', size=1,
+                   label='Cooking addon' if file_type == 'optional' else 'Cooking main',
+                   file_type=file_type, version='1.0', scan_status='clean')
+    info = ModInfo(id='cooking', slug='cooking-overhaul', title='7D2D Cooking Overhaul',
+                   url='https://7daystodiemods.com/mods/cooking-overhaul',
+                   game_versions=['V3 Mods'], categories=categories, files=[file])
+    client = Mock()
+    client.get_mod.return_value = info
+    def download(url, dest, **kwargs):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, 'w') as archive:
+            archive.writestr('Cooking/ModInfo.xml', '<xml><Name value="Cooking"/><DisplayName value="Cooking"/><Version value="1.0"/></xml>')
+    client.download_to.side_effect = download
+    monkeypatch.setattr(dm, 'SevenDaysModsClient', lambda: client)
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: 'public')
+    monkeypatch.setattr(manager, '_is_downloaded_game_version', lambda _: True)
+    monkeypatch.setattr(mod_thumbs, 'cache_web_thumbnails', Mock())
+    def thread(target, **kwargs):
+        obj = Mock()
+        obj.start.side_effect = target
+        obj.is_alive.return_value = False
+        return obj
+    monkeypatch.setattr(dm.threading, 'Thread', thread)
+    entry = item(status='downloading', branch='public')
+    if source == 'sidebar':
+        entry.chosen_file_ref = 'hosted:selected'
+    manager._model.append(entry)
+    prompts = []
+    before_install = []
+    baseline_ids = {i.instance_id for i in instances.load_instances()}
+    def decide(*args):
+        prompts.append(args)
+        before_install.append((library.load_library_entries(), {i.instance_id for i in instances.load_instances()}))
+        manager.resolveMulti(args[0], choice)
+    manager.installTargetRequired.connect(decide)
+    REAL_START_MOD_WORKER(manager, entry)
+    assert len(prompts) == 1
+    assert before_install == [([], baseline_ids)]
+    assert prompts[0][2:4] == (file.label, file_type)
+    assert not manager._multi_decisions
+    if choice == 'mods':
+        assert entry.status == 'completed'
+        assert len(library.load_library_entries()) == 1
+        assert {i.instance_id for i in instances.load_instances()} == baseline_ids
+    elif choice == 'instance':
+        assert entry.status == 'completed'
+        assert not library.load_library_entries()
+        instance, = [i for i in instances.load_instances() if i.instance_id not in baseline_ids]
+        assert (instance.mods_dir / 'Cooking' / 'ModInfo.xml').is_file()
+    else:
+        assert manager._find(entry.id) is None
+        assert not library.load_library_entries()
+        assert {i.instance_id for i in instances.load_instances()} == baseline_ids
+
+
+def test_install_target_survives_queue_restore_without_new_question(manager):
+    entry = item(status='paused')
+    entry.install_target = 'mods'
+    manager._model.append(entry)
+    manager._persist_queue()
+    manager._model.clear()
+    manager._restore_queue()
+    restored, = manager._model.items
+    prompts = []
+    manager.installTargetRequired.connect(lambda *args: prompts.append(args))
+    assert manager._choose_install_target(restored, 'Title', 'File', 'main', 1) == 'mods'
+    assert not prompts
+
+
+@pytest.mark.parametrize('action', ['cancel', 'pause'])
+def test_waiting_for_install_choice_can_be_interrupted(manager, action):
+    entry = item(status='downloading')
+    manager._model.append(entry)
+    def interrupt(*args):
+        (entry.cancel_event if action == 'cancel' else entry.pause_event).set()
+    manager.installTargetRequired.connect(interrupt)
+    expected = dm.OperationCancelled if action == 'cancel' else pack.DownloadPaused
+    with pytest.raises(expected):
+        manager._choose_install_target(entry, 'Title', 'Addon', 'optional', 1)
+    assert not manager._multi_decisions
+
+
+@pytest.mark.parametrize('status', ['queued', 'downloading', 'paused', 'completed'])
+def test_sidebar_allows_separate_addon_without_duplicating_same_file(manager, monkeypatch, status):
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: 'public')
+    monkeypatch.setattr(manager, '_is_downloaded_game_version', lambda _: True)
+    main = item(status=status, branch='public')
+    main.ref_id = 'cooking-overhaul'
+    main.chosen_file_ref = 'hosted:main'
+    manager._model.append(main)
+    manager.startModDownloadWithFileVersion('cooking-overhaul', 'hosted:addon', 'public')
+    assert {i.chosen_file_ref for i in manager._model.items} == {'hosted:main', 'hosted:addon'}
+    manager.startModDownloadWithFileVersion('cooking-overhaul', 'hosted:addon', 'public')
+    assert len(manager._model.items) == 2
+
+
+@pytest.mark.parametrize('source', ['hosted', 'external'])
+def test_main_and_addon_with_same_version_use_separate_archive_cache(manager, monkeypatch, source):
+    import zipfile
+    from backend import library, mod_thumbs
+    from backend.scraper_client import ModInfo, ModFile, ExternalLink
+    files = [ModFile(id=key, media_id='', filename='Shared.zip', size=1, label=key,
+                     file_type='main' if key == 'main' else 'optional', version='1.0', scan_status='clean')
+             for key in ['main', 'addon']]
+    links = [ExternalLink(id=key, url=f'https://example.test/{key}/Shared.zip', label=key,
+                          file_type='main' if key == 'main' else 'optional', version='1.0')
+             for key in ['main', 'addon']]
+    info = ModInfo(id='mod', slug='cache-mod', title='Cache Mod', url='https://7daystodiemods.com/mods/cache-mod',
+                   current_version='1.0', game_versions=['V3 Mods'],
+                   files=files if source == 'hosted' else [], external_links=links if source == 'external' else [])
+    client = Mock()
+    client.get_mod.return_value = info
+    client.resolve_download_url.side_effect = lambda mod, file: f'https://example.test/{file}/Shared.zip'
+    paths = []
+    def download(url, dest, **kwargs):
+        paths.append(dest)
+        name = 'Addon' if '/addon/' in url else 'Main'
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, 'w') as archive:
+            archive.writestr(name+'/ModInfo.xml', f'<xml><Name value="{name}"/><Version value="1.0"/></xml>')
+    client.download_to.side_effect = download
+    monkeypatch.setattr(dm, 'SevenDaysModsClient', lambda: client)
+    monkeypatch.setattr(dm, 'resolve_downloaded_branch', lambda _: 'public')
+    monkeypatch.setattr(manager, '_is_downloaded_game_version', lambda _: True)
+    monkeypatch.setattr(mod_thumbs, 'cache_web_thumbnails', Mock())
+    def thread(target, **kwargs):
+        obj = Mock()
+        obj.start.side_effect = target
+        obj.is_alive.return_value = False
+        return obj
+    monkeypatch.setattr(dm.threading, 'Thread', thread)
+    for index, key in enumerate(['main', 'addon', 'addon']):
+        entry = item(status='downloading', branch='public')
+        entry.ref_id = info.slug
+        entry.install_target = 'mods'
+        if index > 0:
+            entry.chosen_file_ref = 'hosted:addon' if source == 'hosted' else 'external:' + links[1].url
+        manager._model.append(entry)
+        REAL_START_MOD_WORKER(manager, entry)
+        assert entry.status == 'completed'
+    assert len(paths) == 2 and paths[0] != paths[1]
+    assert {e.mod_name for e in library.load_library_entries()} == {'Main', 'Addon'}

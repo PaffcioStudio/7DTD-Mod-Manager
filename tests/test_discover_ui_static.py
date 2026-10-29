@@ -34,15 +34,16 @@ def test_discover_initial_state_reads_saved_full_filter_set():
     assert 'property bool includeAdult: Settings.discoverDefaultIncludeAdult' in text
 
 
-def test_web_mod_drawer_blocks_downloads_that_do_not_match_selected_game_version():
+def test_web_mod_drawer_warns_and_allows_explicit_compatibility_override():
     text = (Path(__file__).resolve().parents[1] / "qml/components/WebModDrawer.qml").read_text(encoding="utf-8")
     assert "detectedGameVersions" in text
     assert "fileAllowedForSelection" in text
     assert "rowCompatible" in text
-    assert "|| !rowCompatible" in text
+    assert "|| !rowCompatible" not in text
     assert 'I18n.t("discover.drawer.fileVersionUnknown")' in text
     assert 'I18n.format("discover.drawer.fileIncompatible"' in text
     assert 'implicitHeight: fileRow.versionStatus === "compatible" ? 58 : 78' in text
     assert 'fileVersionStatus(file)' in text
-    assert 'unverifiedVersionDialog.open()' in text
-    assert 'I18n.t("discover.drawer.downloadUnverified")' in text
+    assert 'unverifiedVersionDialog.ask(' in text
+    assert "Downloads.startModDownloadWithFileOverride(" in text
+    assert 'I18n.t("download.gameVersion.downloadAnyway")' in text

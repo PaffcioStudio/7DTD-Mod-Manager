@@ -46,3 +46,31 @@ def test_file_without_explicit_game_version_uses_single_page_declaration():
 def test_an_ambiguous_catalog_label_is_not_used_to_bypass_version_filter():
     assert not game_version_matches("public", ["V2 Mods / Alpha 21"])
     assert not game_version_matches("public", [])
+
+
+def test_no_cheat_commands_release_number_is_not_a_game_requirement(monkeypatch):
+    from backend.scraper_client import SevenDaysModsClient
+    from backend.download_manager import DownloadManager
+    from backend.web_mod_details import _map_details
+    raw = {
+        'id': 'mod', 'slug': 'no-cheat-commands', 'title': 'No Cheat Commands',
+        'current_version': '1.0.2.0', 'game_versions': ['V3 Mods'],
+        'mod_files': [{'id': 'file', 'filename': 'NoCheatCommands-v1.0.2.zip'}],
+        'external_links': [{'id': 'github', 'label': 'GitHUB', 'mod_version': '1.0.2.0',
+                            'url': 'https://github.com/PaffcioStudio/NoCheatCommands/releases/download/1.0.2.0/NoCheatCommands-v1.0.2.zip'}],
+    }
+    client = SevenDaysModsClient()
+    monkeypatch.setattr(client, '_fetch_mod', lambda _: (raw, 'https://7daystodiemods.com/mods/no-cheat-commands'))
+    meta = client.get_metadata('no-cheat-commands')
+    details = _map_details('no-cheat-commands', meta)
+    for file in details['files']:
+        assert 'v1.0.2' not in file['detectedGameVersions']
+    info = client.get_mod('no-cheat-commands')
+    assert DownloadManager._file_matches_selected_game_version(info.files[0], 'v3', info)
+    assert DownloadManager._external_matches_selected_game_version(info.external_links[0], 'v3', info)
+    assert not DownloadManager._file_matches_selected_game_version(info.files[0], 'v2', info)
+
+
+def test_mod_release_token_without_game_declaration_stays_unknown():
+    assert detect_artifact_game_versions(filename='NoCheatCommands-v1.0.2.zip',
+                                         mod_version='1.0.2.0') == []

@@ -5,10 +5,11 @@ import "../theme"
 // Przewijana powierzchnia na Flickable (ScrollView nie eksponuje contentY
 // do animacji - NumberAnimation na jego aliasie pada z "Cannot animate
 // non-existent property"): pasek tylko przy nadmiarze treści + scroll
-// myszki (animowany krok ~96 px/klik), touchpad 1:1 piksele.
+// myszki ze stałym krokiem; drobne ruchy touchpada zostają pikselowe.
 // Użycie: ustaw contentWidth/contentHeight z zawartości, np.
 //     contentHeight: kolumna.implicitHeight
 Flickable {
+    acceptedButtons: Qt.NoButton
     id: sv
 
     property bool showScrollBar: true   // false = ukryj pasek (np. tryb QR)

@@ -16,7 +16,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, Signal, Slot, Qt
 
 from backend.scraper_client import SevenDaysModsClient
 from services.i18n_message import message as i18n_message
@@ -37,12 +37,14 @@ class _Pending:
 class WebModDetails(QObject):
     """Detail karty web moda - wystawiony do QML jako ``WebDetails``."""
 
+    _finished = Signal(int, str, object, str)
     busyChanged = Signal()
     ready = Signal(str, dict)     # slug, szczegóły
     failed = Signal(str, str)     # slug, komunikat
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._finished.connect(self._on_finished, Qt.ConnectionType.QueuedConnection)
         self._busy = False
         self._pending: _Pending | None = None
         self._generation = 0   # tylko najnowsze żądanie ma znaczenie
@@ -71,27 +73,38 @@ class WebModDetails(QObject):
         generation = self._generation
 
         def worker() -> None:
+            details = None
+            error = ""
             try:
                 client = SevenDaysModsClient()
                 meta = client.get_metadata(slug)
                 details = _map_details(slug, meta)
-            except Exception as exc:  # noqa: BLE001 - komunikat na drawer
+            except Exception as exc:
                 logger.warning("Details for %s: %s", slug, exc)
-                self.failed.emit(slug, str(exc))
-            else:
-                with _lock:
-                    _cache[slug] = (time.monotonic(), details)
-                self.ready.emit(slug, details)
-            finally:
-                if generation == self._generation:
-                    self._busy = False
-                    self.busyChanged.emit()
-                    nxt = self._pending
-                    self._pending = None
-                    if nxt is not None:
-                        self.fetch(nxt.slug)
+                error = str(exc)
+            self._finished.emit(generation, slug, details, error)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(int, str, object, str)
+    def _on_finished(self, generation, slug, details, error):
+        # QML i stan obiektu ruszamy wyłącznie w wątku interfejsu.
+        if generation != self._generation:
+            return
+        self._busy = False
+        pending = self._pending
+        self._pending = None
+        if details is not None:
+            with _lock:
+                _cache[slug] = (time.monotonic(), details)
+        if pending is None:
+            if details is not None:
+                self.ready.emit(slug, details)
+            else:
+                self.failed.emit(slug, error)
+        self.busyChanged.emit()
+        if pending is not None:
+            self.fetch(pending.slug)
 
     @Slot()
     def clearCache(self) -> None:
