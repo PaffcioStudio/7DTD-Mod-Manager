@@ -2,7 +2,7 @@
 
 A Linux desktop launcher and mod manager for **7 Days to Die**, built with Python, PySide6 and QML. Manage game releases from **Alpha 5 onward**, isolated instances, mods and overhauls in one application.
 
-**Current version:** 1.0.50
+**Current version:** 1.0.50  
 **UI languages:** English (default) and Polish
 
 ## Screenshots
