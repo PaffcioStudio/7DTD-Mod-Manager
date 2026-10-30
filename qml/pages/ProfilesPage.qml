@@ -46,7 +46,7 @@ PageShell {
     // zamknięciu (doklik/fade-out nie trafia w karty pod spodem) - D24.
     // Deklaratywnie: odblokowana na starcie (bez modali), lock na otwarcie,
     // 600 ms grace po zamknięciu.
-    readonly property bool anyModalOpen: editorModal.opened || deleteInstanceModal.opened || logsModal.opened
+    readonly property bool anyModalOpen: editorModal.opened || deleteInstanceModal.opened || logsModal.opened || sandboxModal.opened || sandboxInstancePicker.opened
     readonly property bool contentLocked: anyModalOpen || unlockTimer.running
     onAnyModalOpenChanged: if (!anyModalOpen) unlockTimer.restart()
     Timer {
@@ -87,6 +87,19 @@ PageShell {
         Profiles.setInstanceModEnabled(editorModal.instanceId, modId, enabled)
         Profiles.buildModsFor(editorModal.instanceId)
         editorReloadTimer.restart()
+    }
+
+    function openSandboxForBranch(branch) {
+        const matches = Profiles.sandboxInstancesForBranch(branch)
+        if (matches.length === 0) {
+            Bus.toast(I18n.t("instances.sandbox.noInstanceForBranch"), "info")
+        } else if (matches.length === 1) {
+            sandboxModal.openFor(matches[0].id)
+        } else {
+            sandboxInstancePicker.options = matches.map(m => ({value: m.id, label: m.label}))
+            sandboxInstancePicker.selectedId = matches[0].id
+            sandboxInstancePicker.open()
+        }
     }
 
     function openEditor(instanceId) {
@@ -353,6 +366,7 @@ PageShell {
                             viewMode: page.viewMode
 
                             onFavoriteToggled: Profiles.toggleFavorite(profileDelegate.profileId)
+                            onSandboxRequested: sandboxModal.openFor(profileDelegate.profileId)
                             onLaunchRequested: Profiles.launchInstance(profileDelegate.profileId)
                             onActivateRequested: Profiles.activate(profileDelegate.profileId)
                             onBuildModsRequested: Profiles.buildModsFor(profileDelegate.profileId)
@@ -815,6 +829,47 @@ PageShell {
                             font.pixelSize: Typography.caption
                             font.family: Theme.fontFamily
                             elide: Text.ElideRight
+                        }
+                    }
+                }
+
+                // ---------------- ustawienia piaskownicy -------------------
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 96
+                    visible: !editorModal.isNew && Profiles.sandboxSupportsBranch(editorBranch.value)
+                    radius: Dimensions.radiusMd
+                    color: Theme.bg2
+                    border.width: 1
+                    border.color: Theme.border
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 12
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+                            Text {
+                                text: I18n.t("instances.sandbox.title")
+                                color: Theme.text
+                                font.pixelSize: Typography.h3
+                                font.weight: Font.DemiBold
+                                font.family: Theme.fontFamily
+                            }
+                            Text {
+                                text: I18n.t("instances.sandbox.hint")
+                                color: Theme.textMuted
+                                font.pixelSize: Typography.caption
+                                font.family: Theme.fontFamily
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+                        }
+                        SecondaryButton {
+                            text: I18n.t("instances.sandbox.open")
+                            icon: "sliders"
+                            compact: true
+                            onClicked: sandboxModal.openFor(editorModal.instanceId)
                         }
                     }
                 }
@@ -1394,6 +1449,387 @@ PageShell {
                 icon: "check"
                 disabled: editorName.text.trim() === ""
                 onClicked: page.saveEditor()
+            }
+        ]
+    }
+
+    Modal {
+        id: sandboxInstancePicker
+        title: I18n.t("instances.sandbox.chooseInstance")
+        iconName: "sliders"
+        cardWidth: 480
+        property var options: []
+        property string selectedId: ""
+        ColumnLayout {
+            Layout.fillWidth: true
+            DropdownButton {
+                Layout.fillWidth: true
+                value: sandboxInstancePicker.selectedId
+                options: sandboxInstancePicker.options
+                onPicked: value => sandboxInstancePicker.selectedId = value
+            }
+        }
+        footer: [
+            SecondaryButton {
+                text: I18n.t("common.close")
+                icon: "x"
+                onClicked: sandboxInstancePicker.close()
+            },
+            PrimaryButton {
+                text: I18n.t("instances.sandbox.open")
+                icon: "sliders"
+                disabled: sandboxInstancePicker.selectedId === ""
+                onClicked: {
+                    const id = sandboxInstancePicker.selectedId
+                    sandboxInstancePicker.close()
+                    sandboxModal.openFor(id)
+                }
+            }
+        ]
+    }
+
+    // Czytnik piaskownicy jest osobnym oknem. Kod pozostaje w launcherze,
+    // nigdy nie zapisujemy go do plików świata.
+    Modal {
+        id: sandboxModal
+        cardWidth: 720
+        title: I18n.t("instances.sandbox.title")
+        iconName: "sliders"
+        property string instanceId: ""
+        property string worldId: ""
+        property var availableWorlds: []
+        property var preview: ({valid: false, groups: [], code: "", count: 0})
+        property bool saveOk: false
+        property bool copyOk: false
+
+        function openFor(instanceId) {
+            sandboxModal.instanceId = instanceId
+            availableWorlds = Profiles.sandboxWorlds(instanceId)
+            worldId = availableWorlds.length ? availableWorlds[0].id : ""
+            sandboxInput.text = ""
+            saveOk = false
+            copyOk = false
+            refresh()
+            open()
+        }
+        function selectWorld(next) {
+            worldId = next
+            sandboxInput.text = ""
+            saveOk = false
+            copyOk = false
+            refresh()
+        }
+        function refresh() {
+            preview = worldId !== "" ? Profiles.sandboxInspect(instanceId, worldId, sandboxInput.text)
+                                     : {valid: false, error: "no_world", groups: [], code: "", count: 0}
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 10
+
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: Theme.textMuted
+                font.pixelSize: Typography.caption
+                text: I18n.t("instances.sandbox.readOnly")
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Text {
+                    text: I18n.t("instances.sandbox.world")
+                    color: Theme.textSecondary
+                    font.pixelSize: Typography.body
+                }
+
+                DropdownButton {
+                    Layout.fillWidth: true
+                    value: sandboxModal.worldId
+                    options: sandboxModal.availableWorlds.map(w => ({value: w.id, label: w.label}))
+                    onPicked: value => sandboxModal.selectWorld(value)
+                }
+            }
+
+            AppTextField {
+                id: sandboxInput
+                Layout.fillWidth: true
+                enabled: sandboxModal.worldId !== ""
+                placeholder: I18n.t("instances.sandbox.codePlaceholder")
+                onAccepted: sandboxModal.refresh()
+                onTextChanged: {
+                    sandboxModal.saveOk = false
+                    sandboxModal.copyOk = false
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                SecondaryButton {
+                    text: I18n.t("instances.sandbox.preview")
+                    icon: "search"
+                    compact: true
+                    enabled: sandboxModal.worldId !== ""
+                    onClicked: sandboxModal.refresh()
+                }
+                SecondaryButton {
+                    text: I18n.t("instances.sandbox.save")
+                    icon: "save"
+                    compact: true
+                    enabled: sandboxModal.worldId !== ""
+                    onClicked: {
+                        sandboxModal.saveOk = Profiles.saveSandboxCode(sandboxModal.instanceId,
+                                                     sandboxModal.worldId, sandboxInput.text)
+                        sandboxModal.refresh()
+                    }
+                }
+                SecondaryButton {
+                    text: I18n.t("instances.sandbox.fromGame")
+                    icon: "refresh-cw"
+                    compact: true
+                    enabled: sandboxModal.worldId !== ""
+                    onClicked: {
+                        sandboxInput.text = ""
+                        sandboxModal.saveOk = false
+                        sandboxModal.copyOk = false
+                        sandboxModal.refresh()
+                    }
+                }
+                SecondaryButton {
+                    text: I18n.t("instances.sandbox.copyCode")
+                    icon: "copy"
+                    compact: true
+                    enabled: sandboxModal.preview.valid && sandboxModal.preview.code.length > 0
+                    onClicked: sandboxModal.copyOk = Profiles.copySandboxCode(sandboxModal.preview.code)
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    visible: sandboxModal.preview.valid
+                    text: I18n.format("instances.sandbox.changed", {count: sandboxModal.preview.count})
+                    color: Theme.accent
+                    font.pixelSize: Typography.caption
+                    font.weight: Font.DemiBold
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: sandboxModal.copyOk || sandboxModal.saveOk
+
+                Rectangle {
+                    radius: 7
+                    color: Theme.rgba(Theme.success, 0.12)
+                    border.width: 1
+                    border.color: Theme.rgba(Theme.success, 0.28)
+                    implicitHeight: 28
+                    implicitWidth: statusText.implicitWidth + 20
+
+                    Text {
+                        id: statusText
+                        anchors.centerIn: parent
+                        text: sandboxModal.copyOk ? I18n.t("instances.sandbox.copied")
+                              : sandboxModal.saveOk ? I18n.t("instances.sandbox.saved") : ""
+                        color: Theme.success
+                        font.pixelSize: Typography.caption
+                        font.weight: Font.Medium
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                visible: sandboxModal.preview.valid
+                implicitHeight: 52
+                radius: 8
+                color: Theme.bg3
+                border.width: 1
+                border.color: Theme.border
+
+                TextEdit {
+                    anchors.fill: parent
+                    anchors.margins: 9
+                    text: sandboxModal.preview.code || ""
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.WrapAnywhere
+                    color: Theme.text
+                    font.pixelSize: Typography.caption
+                    font.family: Theme.fontFamily
+                    clip: true
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                color: Theme.textMuted
+                font.pixelSize: Typography.caption
+                wrapMode: Text.Wrap
+                text: sandboxModal.preview.valid
+                      ? (sandboxModal.preview.source === "game"
+                         ? I18n.t("instances.sandbox.sourceGame")
+                         : sandboxModal.preview.source === "saved"
+                           ? I18n.t("instances.sandbox.sourceSaved")
+                           : I18n.t("instances.sandbox.sourceInput"))
+                      : I18n.t("instances.sandbox.error." + (sandboxModal.preview.error || "no_code"))
+            }
+
+            Text {
+                visible: sandboxModal.preview.valid && sandboxModal.preview.unknown.length > 0
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: Theme.warning
+                text: I18n.t("instances.sandbox.unknown")
+                font.pixelSize: Typography.caption
+            }
+
+            AppScrollView {
+                Layout.fillWidth: true
+                // Lista dopasowuje się do okna, zamiast wypychać modal poza ekran.
+                Layout.preferredHeight: Math.max(120, Math.min(250, sandboxModal.height - 520))
+                contentHeight: sandboxItems.implicitHeight
+
+                ColumnLayout {
+                    id: sandboxItems
+                    width: parent.width
+                    spacing: 12
+
+                    Repeater {
+                        model: sandboxModal.preview.groups || []
+
+                        ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 28
+                                radius: 7
+                                color: Theme.bg3
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+
+                                    Text {
+                                        text: I18n.language === "pl" ? modelData.pl : modelData.en
+                                        color: Theme.text
+                                        font.pixelSize: Typography.body
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Text {
+                                        text: String(modelData.entries.length)
+                                        color: Theme.textMuted
+                                        font.pixelSize: Typography.caption
+                                    }
+                                }
+                            }
+
+                            Repeater {
+                                model: modelData.entries
+
+                                Rectangle {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    radius: 10
+                                    color: Theme.bg1
+                                    border.width: 1
+                                    border.color: Theme.border
+                                    implicitHeight: entryColumn.implicitHeight + 18
+
+                                    ColumnLayout {
+                                        id: entryColumn
+                                        anchors.fill: parent
+                                        anchors.margins: 9
+                                        spacing: 6
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 10
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                color: Theme.text
+                                                font.pixelSize: Typography.body
+                                                font.weight: Font.Medium
+                                                text: I18n.language === "pl" ? modelData.pl : modelData.en
+                                                wrapMode: Text.Wrap
+                                            }
+
+                                            Rectangle {
+                                                radius: 8
+                                                color: Theme.rgba(modelData.verified ? Theme.accent : Theme.warning, 0.12)
+                                                border.width: 1
+                                                border.color: Theme.rgba(modelData.verified ? Theme.accent : Theme.warning, 0.3)
+                                                implicitHeight: 28
+                                                implicitWidth: valueText.implicitWidth + 18
+
+                                                Text {
+                                                    id: valueText
+                                                    anchors.centerIn: parent
+                                                    color: modelData.verified ? Theme.accent : Theme.warning
+                                                    font.pixelSize: Typography.caption
+                                                    font.weight: Font.DemiBold
+                                                    text: I18n.language === "pl" ? modelData.value_pl : modelData.value_en
+                                                }
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Rectangle {
+                                                radius: 6
+                                                color: Theme.bg3
+                                                border.width: 1
+                                                border.color: Theme.border
+                                                implicitHeight: 22
+                                                implicitWidth: codeText.implicitWidth + 14
+
+                                                Text {
+                                                    id: codeText
+                                                    anchors.centerIn: parent
+                                                    color: Theme.textMuted
+                                                    font.pixelSize: Typography.micro
+                                                    font.family: Theme.fontFamily
+                                                    text: modelData.code
+                                                }
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                color: Theme.textMuted
+                                                font.pixelSize: Typography.caption
+                                                text: I18n.language === "pl"
+                                                      ? modelData.description_short_pl
+                                                      : modelData.description_short_en
+                                                wrapMode: Text.Wrap
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        footer: [
+            SecondaryButton {
+                text: I18n.t("common.close")
+                icon: "x"
+                onClicked: sandboxModal.close()
             }
         ]
     }

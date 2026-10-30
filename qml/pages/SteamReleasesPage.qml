@@ -12,6 +12,7 @@ PageShell {
     pageName: "steam_releases"
     maxWidth: 1080
     signal logoutRequested()
+    signal sandboxRequested(string branch)
 
     property string pendingDeleteBranch: ""
     property string pendingReinstallBranch: ""
@@ -806,6 +807,15 @@ PageShell {
                                 }
 
                                 IconButton {
+                                    visible: installedCard.modelData.installed && Profiles.sandboxSupportsBranch(installedCard.modelData.branch)
+                                    buttonSize: 30
+                                    iconSize: 16
+                                    icon: "sliders"
+                                    tooltip: I18n.t("instances.sandbox.title")
+                                    onClicked: page.sandboxRequested(installedCard.modelData.branch)
+                                }
+
+                                IconButton {
                                     buttonSize: 30
                                     iconSize: 14
                                     icon: installedCard.modelData.installed ? "refresh-cw" : "download"
@@ -940,6 +950,15 @@ PageShell {
                                     value: GameVersions.progress / 100
                                     barHeight: 4
                                 }
+                            }
+
+                            IconButton {
+                                visible: branchRow.installed && Profiles.sandboxSupportsBranch(branchRow.modelData.branch)
+                                buttonSize: 34
+                                iconSize: 16
+                                icon: "sliders"
+                                tooltip: I18n.t("instances.sandbox.title")
+                                onClicked: page.sandboxRequested(branchRow.modelData.branch)
                             }
 
                             SecondaryButton {

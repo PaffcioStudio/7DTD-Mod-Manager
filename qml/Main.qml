@@ -224,6 +224,10 @@ ApplicationWindow {
                     SteamReleasesPage { id: steamReleasesPage
                         objectName: "steamReleasesPage"
                         onLogoutRequested: steamAccountModal.requestLogout()
+                        onSandboxRequested: (branch) => {
+                            pageStack.go("profiles")
+                            profilesPage.openSandboxForBranch(branch)
+                        }
                     }
                     ProtonsPage { objectName: "protonsPage" }
                     GameProfilesPage {}

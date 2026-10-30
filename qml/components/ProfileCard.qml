@@ -17,6 +17,7 @@ Item {
     signal buildModsRequested()
     signal openFolderRequested()
     signal favoriteToggled()
+    signal sandboxRequested()
 
     property string profileId: ""
     property string name: ""
@@ -109,6 +110,16 @@ Item {
                 font.pixelSize: Typography.micro
                 font.weight: Font.DemiBold
                 font.family: Theme.fontFamily
+            }
+            IconButton {
+                visible: Profiles.sandboxSupportsBranch(root.gameBranch)
+                icon: "sliders"
+                tint: Theme.textSecondary
+                hoverTint: Theme.text
+                tooltip: I18n.t("instances.sandbox.title")
+                buttonSize: 28
+                iconSize: 16
+                onClicked: root.sandboxRequested()
             }
             IconButton {
                 icon: root.favorite ? "star-filled" : "star"

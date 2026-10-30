@@ -696,6 +696,92 @@ class ProfileManager(QObject):
         }
 
     # ------------------------------------------------------------------ #
+    # Podgląd kodów piaskownicy dla konkretnych zapisów instancji.
+    # ------------------------------------------------------------------ #
+    def _sandbox_storage_path(self):
+        return fs.data_dir() / "sandbox-codes.json"
+
+    def _sandbox_saved_codes(self):
+        value = fs.read_json(self._sandbox_storage_path(), {})
+        return value if isinstance(value, dict) else {}
+
+    @Slot(str, result=bool)
+    def sandboxSupportsBranch(self, branch: str) -> bool:
+        from backend.sandbox_settings import supports_sandbox
+        return supports_sandbox(branch)
+
+    @Slot(str, result="QVariantList")
+    def sandboxInstancesForBranch(self, branch: str):
+        """Instancje przypisane do wydania gry, nie same kopie Steam."""
+        from backend.sandbox_settings import supports_sandbox
+        if not supports_sandbox(branch):
+            return []
+        target = branch.strip().casefold()
+        return [{'id': instance.instance_id, 'label': instance.name}
+                for instance in self._instances
+                if (instance.game_branch or '').strip().casefold() == target]
+
+    @Slot(str, result="QVariantList")
+    def sandboxWorlds(self, instance_id: str):
+        from backend.sandbox_settings import discover_worlds
+        instance = self._instance(instance_id)
+        return discover_worlds(instance.data_path) if instance else []
+
+    @Slot(str, result=bool)
+    def copySandboxCode(self, code: str) -> bool:
+        """Kopiuje poprawny kod; brak kodu nie czyści schowka."""
+        from backend.sandbox_settings import check_code
+        from PySide6.QtGui import QGuiApplication
+        try:
+            normalized = check_code(code)
+            clipboard = QGuiApplication.clipboard()
+            if clipboard is None:
+                return False
+            clipboard.setText(normalized)
+            return True
+        except (ValueError, RuntimeError):
+            return False
+
+    @Slot(str, str, result=str)
+    def sandboxStoredCode(self, instance_id: str, world_id: str):
+        if not any(w["id"] == world_id for w in self.sandboxWorlds(instance_id)):
+            return ""
+        return str(self._sandbox_saved_codes().get(instance_id, {}).get(world_id, ""))
+
+    @Slot(str, str, str, result="QVariantMap")
+    def sandboxInspect(self, instance_id: str, world_id: str, code: str):
+        from backend.sandbox_settings import inspect
+        instance = self._instance(instance_id)
+        if not instance:
+            return {"valid": False, "error": "no_world", "groups": [], "code": ""}
+        return inspect(instance.data_path, world_id, code,
+                       self.sandboxStoredCode(instance_id, world_id))
+
+    @Slot(str, str, str, result=bool)
+    def saveSandboxCode(self, instance_id: str, world_id: str, code: str):
+        """Zapisuje wyłącznie ustawienia launchera, nigdy pliki świata."""
+        from backend.sandbox_settings import check_code
+        if not any(w["id"] == world_id for w in self.sandboxWorlds(instance_id)):
+            return False
+        try:
+            normalized = check_code(code) if (code or '').strip() else ''
+        except ValueError:
+            return False
+        payload = self._sandbox_saved_codes()
+        saved = payload.get(instance_id, {})
+        if not isinstance(saved, dict):
+            saved = {}
+        if normalized:
+            saved[world_id] = normalized
+        else:
+            saved.pop(world_id, None)
+        if saved:
+            payload[instance_id] = saved
+        else:
+            payload.pop(instance_id, None)
+        return fs.write_json(self._sandbox_storage_path(), payload)
+
+    # ------------------------------------------------------------------ #
     # launch / build (stage 6)
     # ------------------------------------------------------------------ #
     @Slot(str, result=str)
