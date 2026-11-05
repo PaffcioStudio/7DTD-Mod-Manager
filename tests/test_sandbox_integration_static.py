@@ -67,8 +67,8 @@ def test_sandbox_clipboard_and_auto_game_code_ui():
 
 def test_release_notes_latest_contains_sandbox_feature():
     notes = (ROOT / 'RELEASE_NOTES.md').read_text(encoding='utf-8')
-    assert '## (latest) 1.0.50' in notes
-    latest = notes.split('## (latest) 1.0.50', 1)[1].split('## 1.0.49', 1)[0]
+    assert '## (old) 1.0.50' in notes
+    latest = notes.split('## (old) 1.0.50', 1)[1].split('## 1.0.49', 1)[0]
     assert 'Sandbox settings for 7 Days to Die V3' in latest
     assert 'one-click copying' in latest
 

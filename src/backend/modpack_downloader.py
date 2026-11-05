@@ -584,15 +584,21 @@ def find_mods_root_in_extracted(extracted_dir: Path) -> Optional[Path]:
         if path.is_dir():
             return path
 
-    # archiwa pojedynczych modów z 7daystodiemods.com często trzymają
-    # foldery modów BEZPOŚREDNIO w korzeniu (bez opakowującego Mods/) -
-    # wtedy sam korzeń jest sztucznym Mods-rootem (etap 9)
-    try:
-        for child in extracted_dir.iterdir():
-            if child.is_dir() and find_modinfo(child) is not None:
-                return extracted_dir
-    except OSError:
-        pass
+    # Paczki bywają opakowane w dowolnie nazwane foldery, bez katalogu Mods.
+    # Sprawdzamy tylko katalogi, więc read*.txt i read*.md nie blokują wykrywania.
+    pending = [extracted_dir]
+    while pending:
+        root = pending.pop(0)
+        try:
+            children = sorted(
+                (child for child in root.iterdir() if child.is_dir() and not child.is_symlink()),
+                key=lambda child: child.name.lower(),
+            )
+            if any(find_modinfo(child) is not None for child in children):
+                return root
+            pending.extend(children)
+        except OSError:
+            continue
 
     return None
 

@@ -164,3 +164,22 @@ def test_mediafire_real_resolution_supports_7z_and_rar():
         ))
         link = ExternalLink("mf", "https://www.mediafire.com/file/abcd/mod/file", "Mod")
         assert client.resolve_external_url(link) == (direct, 0, f"mod.{suffix}")
+
+
+@pytest.mark.parametrize("wrapper", ["Folder That Holds UC 2.1", "outer/inner/package"])
+def test_wrapped_multiple_mods_ignore_documentation(tmp_path, wrapper):
+    archive = tmp_path / "mods.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        for name in ("Gun Weapon Fix", "Undead Country 2.1"):
+            zipped.writestr(f"{wrapper}/{name}/ModInfo.xml", '<xml><Name value="Mod"/></xml>')
+            zipped.writestr(f"{wrapper}/{name}/Config/items.xml", '<items/>')
+        for name in ("Read This.txt", "Readme.txt", "readme.txt", "read-me.txt", "read-me.md", "README.MD"):
+            zipped.writestr(f"{wrapper}/{name}", "Instructions")
+    extracted = tmp_path / "out"
+    extract_archive(archive, extracted)
+    root = modpack_downloader.prepare_mods_root_in_extracted(extracted)
+    assert root == extracted / wrapper
+    assert modpack_downloader.mods_root_has_valid_mods(root)
+    assert sorted(p.name for p in root.iterdir() if p.is_dir()) == ["Gun Weapon Fix", "Undead Country 2.1"]
+    for name in ("Gun Weapon Fix", "Undead Country 2.1"):
+        assert (root / name / "Config/items.xml").read_text() == '<items/>'
