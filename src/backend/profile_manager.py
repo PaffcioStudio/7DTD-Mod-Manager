@@ -875,6 +875,9 @@ class ProfileManager(QObject):
                         "inFolder": True,
                         "managed": True,
                         "source": i18n_message("instances.mod.source.library"),
+                        "description": info.get("description") or entry.description,
+                        "thumbUrl": self._mods.thumbnail_url(entry.library_id),
+                        "dependencies": self._mods._dependency_records(entry.library_id, instance_id),
                     })
                 else:
                     out.append({
@@ -885,11 +888,22 @@ class ProfileManager(QObject):
                         "inFolder": True,
                         "managed": False,
                         "source": i18n_message("instances.mod.source.manual"),
+                        "description": info.get("description", ""),
+                        "thumbUrl": "",
                     })
 
         for m in self._mods.all_mods():
             if m.id in seen_ids:
                 continue
+            entry = self._mods.library_entry(m.id)
+            description = entry.description if entry is not None else m.description
+            if entry is not None:
+                descriptor = find_modinfo(entry.path)
+                if descriptor is not None:
+                    try:
+                        description = parse_modinfo(descriptor).get("description") or description
+                    except Exception:
+                        pass
             out.append({
                 "modId": m.id,
                 "name": m.name,
@@ -898,6 +912,9 @@ class ProfileManager(QObject):
                 "inFolder": False,
                 "managed": True,
                 "source": i18n_message("instances.mod.source.library"),
+                "description": description,
+                "thumbUrl": self._mods.thumbnail_url(m.id),
+                "dependencies": self._mods._dependency_records(m.id, instance_id),
             })
         return out
 

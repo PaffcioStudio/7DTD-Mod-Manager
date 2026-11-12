@@ -70,23 +70,65 @@ PageShell {
 
     // mody per instancja (krok 7.5): lista w dialogu edycji
     property var editorMods: []
+    property var editorThumbs: ({})
+    property string pendingDependencyModId: ""
+    property var pendingDependencyIds: []
 
-    function loadEditorMods() {
-        if (editorModal.instanceId !== "")
+    function loadEditorMods(preserveScroll) {
+        if (editorModal.instanceId !== "") {
+            const oldY = preserveScroll ? editorModsList.contentY : 0
             editorMods = Profiles.instanceModStates(editorModal.instanceId)
+            if (preserveScroll) {
+                Qt.callLater(function() {
+                    const maxY = Math.max(0, editorModsList.contentHeight - editorModsList.height)
+                    editorModsList.contentY = Math.min(oldY, maxY)
+                })
+            } else {
+                editorModsList.contentY = 0
+            }
+        }
     }
 
     Timer {
         id: editorReloadTimer
         interval: 700
-        onTriggered: page.loadEditorMods()
+        onTriggered: page.loadEditorMods(true)
     }
 
-    function setEditorMod(modId, enabled) {
+    Connections {
+        target: Mods
+        function onThumbReady(modId, url) {
+            const next = Object.assign({}, page.editorThumbs)
+            next[modId] = url
+            page.editorThumbs = next
+        }
+    }
+
+    function applyEditorMod(modId, enabled, dependencyIds) {
         // aktywacja + natychmiastowa przebudowa folderu Mods instancji
+        if (enabled) {
+            for (let i = 0; i < dependencyIds.length; i++)
+                Profiles.setInstanceModEnabled(editorModal.instanceId, dependencyIds[i], true)
+        }
         Profiles.setInstanceModEnabled(editorModal.instanceId, modId, enabled)
         Profiles.buildModsFor(editorModal.instanceId)
         editorReloadTimer.restart()
+    }
+
+    function setEditorMod(modId, enabled, dependencies) {
+        const toEnable = (dependencies || []).filter(dep => dep.available && !dep.enabled)
+        const unmet = (dependencies || []).filter(dep => !dep.available || !dep.enabled)
+        if (enabled && unmet.length > 0) {
+            pendingDependencyModId = modId
+            pendingDependencyIds = toEnable.map(dep => dep.libraryId)
+            editorDependencyConfirm.askWithStatusItems(
+                I18n.t("instances.mods.dependenciesTitle"),
+                I18n.t("instances.mods.dependenciesMessage"),
+                dependencies || [],
+                I18n.t("instances.mods.enableDependencies"))
+            return
+        }
+        applyEditorMod(modId, enabled, [])
     }
 
     function openSandboxForBranch(branch) {
@@ -509,27 +551,18 @@ PageShell {
                 return
 
             Profiles.setInstanceModsEnabled(editorModal.instanceId, enabled)
-            const next = editorMods.map(m => {
-                if (!m.managed)
-                    return m
-                const copy = Object.assign({}, m)
-                copy.enabled = enabled
-                return copy
-            })
-            editorMods = next
             Profiles.buildModsFor(editorModal.instanceId)
             editorReloadTimer.restart()
         }
 
         function refreshMods() {
-            page.loadEditorMods()
+            page.loadEditorMods(true)
         }
 
         function openModInfo(mod) {
-            Bus.toast(I18n.format("instances.mod.toast", {
-                          name: mod.name,
-                          state: I18n.t(!mod.managed ? "instances.mod.toast.manual" : (mod.enabled ? "instances.mod.toast.enabled" : "instances.mod.toast.disabled"))
-                      }), "info")
+            editorModInfoModal.title = mod.name || mod.modId
+            editorModInfoModal.descriptionText = mod.description || ""
+            editorModInfoModal.open()
         }
 
         RowLayout {
@@ -1284,17 +1317,30 @@ PageShell {
                                 anchors.rightMargin: 9
                                 spacing: 10
 
-                                Rectangle {
+                                Item {
                                     width: 34
                                     height: 34
-                                    radius: 9
-                                    color: modelData.managed
-                                           ? (modelData.enabled ? Theme.successSoft : Theme.bg3)
-                                           : Theme.infoSoft
-                                    border.width: 1
-                                    border.color: modelData.managed
-                                                   ? Theme.rgba(modelData.enabled ? Theme.success : Theme.borderHover, 0.25)
-                                                   : Theme.rgba(Theme.info, 0.25)
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 9
+                                        color: modelData.managed
+                                               ? (modelData.enabled ? Theme.successSoft : Theme.bg3)
+                                               : Theme.infoSoft
+                                        border.width: 1
+                                        border.color: modelData.managed
+                                                       ? Theme.rgba(modelData.enabled ? Theme.success : Theme.borderHover, 0.25)
+                                                       : Theme.rgba(Theme.info, 0.25)
+                                    }
+
+                                    Image {
+                                        id: editorModThumb
+                                        anchors.fill: parent
+                                        anchors.margins: 1
+                                        source: page.editorThumbs[modelData.modId] || modelData.thumbUrl || ""
+                                        asynchronous: true
+                                        fillMode: Image.PreserveAspectCrop
+                                        visible: status === Image.Ready
+                                    }
 
                                     Icon {
                                         anchors.centerIn: parent
@@ -1303,6 +1349,7 @@ PageShell {
                                         tint: modelData.managed
                                               ? (modelData.enabled ? Theme.success : Theme.textSecondary)
                                               : Theme.info
+                                        visible: editorModThumb.status !== Image.Ready
                                     }
                                 }
 
@@ -1357,7 +1404,7 @@ PageShell {
                                     visible: modelData.managed
                                     checked: modelData.enabled
                                     enabled: !Game.isRunning
-                                    onToggled: (checked) => page.setEditorMod(modelData.modId, checked)
+                                    onToggled: (checked) => page.setEditorMod(modelData.modId, checked, modelData.dependencies || [])
                                 }
 
                                 IconButton {
@@ -1862,5 +1909,44 @@ PageShell {
         // druga linia obrony: modal mógł zostać otwarty, zanim gra wystartowała
         confirmDisabled: Game.isRunning
         onConfirmed: Profiles.remove(instanceToDelete, optionChecked)
+    }
+
+    ConfirmModal {
+        id: editorDependencyConfirm
+        z: editorModal.z + 10
+        onConfirmed: page.applyEditorMod(page.pendingDependencyModId, true, page.pendingDependencyIds)
+    }
+
+    Modal {
+        id: editorModInfoModal
+        z: editorModal.z + 20
+        cardWidth: 560
+        iconName: "info"
+        property string descriptionText: ""
+        onCloseRequested: editorModInfoModal.close()
+
+        AppScrollView {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(360, Math.max(70, infoDescription.implicitHeight))
+            contentHeight: infoDescription.implicitHeight
+
+            Text {
+                id: infoDescription
+                width: parent.width
+                text: editorModInfoModal.descriptionText || I18n.t("instances.mod.noDescription")
+                color: Theme.textSecondary
+                font.pixelSize: Typography.body
+                font.family: Theme.fontFamily
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        footer: [
+            SecondaryButton {
+                text: I18n.t("common.close")
+                icon: "x"
+                onClicked: editorModInfoModal.close()
+            }
+        ]
     }
 }

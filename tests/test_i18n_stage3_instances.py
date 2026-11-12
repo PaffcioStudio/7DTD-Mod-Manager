@@ -62,7 +62,8 @@ def test_instances_page_uses_translation_catalog_for_user_visible_text():
     assert 'import "../i18n"' in INSTANCES
     assert '"instances.mods.results.one"' in INSTANCES and '"instances.mods.results.many"' in INSTANCES
     assert 'I18n.format("instances.delete.message"' in INSTANCES
-    assert 'I18n.format("instances.mod.toast"' in INSTANCES
+    assert 'editorModInfoModal.open()' in INSTANCES
+    assert 'text: editorModInfoModal.descriptionText' in INSTANCES
 
     forbidden = (
         '"Instancje"', '"Nowa instancja"',

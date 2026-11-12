@@ -13,6 +13,7 @@ Modal {
     property string alternativeLabel: ""
 
     property string message: ""
+    property int messageFormat: Text.PlainText
     property string confirmLabel: I18n.t("common.confirm.confirm")
     property string cancelLabel: I18n.t("common.confirm.cancel")
     property bool danger: false
@@ -25,8 +26,17 @@ Modal {
     // wywolac akcji dwa razy ani 'przeltec' w elementy strony pod modalem
     property bool _fired: false
 
-    function ask(titleText, messageText, confirmText, isDanger) {
+    function escapeHtml(value) {
+        return String(value).replace(/&/g, "&amp;")
+                            .replace(/</g, "&lt;")
+                            .replace(/>/g, "&gt;")
+                            .replace(/\"/g, "&quot;")
+                            .replace(/'/g, "&#39;")
+    }
+
+    function ask(titleText, messageText, confirmText, isDanger, format) {
         root.message = messageText
+        root.messageFormat = format === undefined ? Text.PlainText : format
         root.confirmLabel = confirmText || I18n.t("common.confirm.confirm")
         root.danger = isDanger === true
         root._fired = false
@@ -34,8 +44,18 @@ Modal {
         open()
     }
 
+    function askWithStatusItems(titleText, messageText, items, confirmText) {
+        const rows = (items || []).map(item => {
+            const color = item.available ? Theme.success.toString() : Theme.danger.toString()
+            return "<font color=\"" + color + "\">• " + escapeHtml(item.name) + "</font>"
+        })
+        const message = escapeHtml(messageText) + (rows.length ? "<br/><br/>" + rows.join("<br/>") : "")
+        ask(titleText, message, confirmText, false, Text.RichText)
+    }
+
     Text {
         text: root.message
+        textFormat: root.messageFormat
         color: Theme.textSecondary
         font.pixelSize: Typography.body + 0.5
         font.family: Theme.fontFamily

@@ -214,6 +214,10 @@ class InstanceModStatesNoDuplicates(IsolatedHome):
                     name = "OnlyMod"
                     version = "1.0"
                 return [M()]
+            def thumbnail_url(self_inner, mod_id):
+                return ""
+            def _dependency_records(self_inner, mod_id, instance_id=""):
+                return []
         pm._mods = _Mods()
         pm._instance = lambda iid: next((i for i in pm._instances if i.instance_id == iid), None)
 

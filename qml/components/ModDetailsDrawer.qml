@@ -24,6 +24,25 @@ Item {
     }
     property string modId: ""
     property var modData: ({})
+    property string pendingDependencyModId: ""
+
+    function requestToggle() {
+        const enabled = drawer.modData.enabled !== true
+        const unmet = enabled
+                ? (drawer.modData.dependencies || []).filter(dep => !dep.available || !dep.enabled)
+                : []
+        if (unmet.length > 0) {
+            pendingDependencyModId = drawer.modId
+            const names = unmet.map(dep => dep.name).join(", ")
+            dependencyConfirm.ask(
+                I18n.t("instances.mods.dependenciesTitle"),
+                I18n.format("instances.mods.dependenciesMessage", {dependencies: names}),
+                I18n.t("instances.mods.enableDependencies"), false)
+            return
+        }
+        Mods.setEnabledWithDependencies(drawer.modId, enabled, false)
+        drawer.reload()
+    }
 
     readonly property color catColor: modData.category !== undefined ? Theme.catColor(modData.category) : Theme.accent
 
@@ -403,9 +422,16 @@ Item {
                                 Layout.fillWidth: true
 
                                 Icon { name: "chevron-right"; size: 12; tint: Theme.textMuted }
+                                Rectangle {
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: modelData.available ? Theme.success : Theme.danger
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
                                 Text {
-                                    text: parent.modelData
-                                    color: Theme.textSecondary
+                                    text: modelData.name !== undefined ? modelData.name : modelData
+                                    color: modelData.available ? Theme.success : Theme.danger
                                     font.pixelSize: Typography.small
                                     font.family: Theme.fontFamily
                                 }
@@ -490,8 +516,7 @@ Item {
                         icon: drawer.modData.enabled === true ? "x" : "check"
                         danger: drawer.modData.enabled === true
                         onClicked: {
-                            Mods.toggleMod(drawer.modId)
-                            drawer.reload()
+                            drawer.requestToggle()
                         }
                     }
 
@@ -526,6 +551,14 @@ Item {
                 drawer.close()
                 Mods.uninstallMod(drawer.modId)
             }
+        }
+    }
+
+    ConfirmModal {
+        id: dependencyConfirm
+        onConfirmed: {
+            Mods.setEnabledWithDependencies(drawer.pendingDependencyModId, true, true)
+            drawer.reload()
         }
     }
 

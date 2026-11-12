@@ -49,3 +49,24 @@ def parse_modinfo(path: Path) -> dict[str, str]:
         # not carry the author; the new UI shows it on every mod card.
         "author": _field(root, "Author"),
     }
+
+
+def parse_dependencies(path: Path) -> list[str]:
+    """Czyta stabilne identyfikatory Name z sekcji Dependencies moda."""
+    root = ET.parse(path).getroot()
+    dependencies = []
+    for parent in root.iter():
+        if parent.tag.split("}", 1)[-1].lower() != "dependency":
+            continue
+        name = ""
+        for child in parent.iter():
+            if child is parent or child.tag.split("}", 1)[-1].lower() != "name":
+                continue
+            name = (child.attrib.get("value") or (child.text or "")).strip()
+            if name:
+                break
+        if not name:
+            name = (parent.attrib.get("value") or parent.attrib.get("name") or "").strip()
+        if name and name.casefold() not in {item.casefold() for item in dependencies}:
+            dependencies.append(name)
+    return dependencies

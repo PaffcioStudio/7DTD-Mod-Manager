@@ -39,7 +39,7 @@ from backend.events import EventBus
 from backend.library import LibraryModEntry, find_by_library_id
 from backend.mod_loader import ModLoader
 from backend.mod_scanner import ModScanner
-from backend.modinfo import find_modinfo
+from backend.modinfo import find_modinfo, parse_dependencies
 from models.mod import Mod
 from services import filesystem_service as fs
 from services.i18n_message import message as i18n_message
@@ -617,6 +617,10 @@ class ModManager(QObject):
         """Wpis Biblioteki dla id moda z modelu (id == library_id)."""
         return find_by_library_id(self._library_entries, mod_id)
 
+    def thumbnail_url(self, mod_id: str) -> str:
+        """Adres miniatury z cache dla Biblioteki i edytora instancji."""
+        return self._model.thumb_url(mod_id)
+
     # ------------------------------------------------------------------ #
     # miniatury ikon (etap 17) - tło przy starcie; plik w cache/thumbs
     # jest źródłem prawdy (jest = nie pobieramy ponownie)
@@ -841,10 +845,7 @@ class ModManager(QObject):
         }
 
     def _full_mod(self, mod: Mod) -> dict:
-        dep_names = []
-        for dep_id in mod.dependencies:
-            dep = self._model.mod_by_id(dep_id)
-            dep_names.append(dep.name if dep else dep_id)
+        dependencies = self._dependency_records(mod.id)
         conflict_names = self._conflicts.partners_of(mod.id)
         return {
             "id": mod.id,
@@ -864,11 +865,51 @@ class ModManager(QObject):
             "downloadsText": mod.downloads_text,
             "rating": mod.rating,
             "tags": list(mod.tags),
-            "dependencies": dep_names,
+            "dependencies": dependencies,
             "conflictNames": conflict_names,
             "gameVersion": GAME_VERSION,
             "thumbUrl": self._model.thumb_url(mod.id),
         }
+
+    def _dependency_records(self, mod_id: str, instance_id: str = "") -> list[dict]:
+        entry = self.library_entry(mod_id)
+        names: list[str] = []
+        if entry is not None:
+            descriptor = find_modinfo(entry.path)
+            if descriptor is not None:
+                try:
+                    names = parse_dependencies(descriptor)
+                except Exception:
+                    names = []
+        if not names:
+            mod = self._model.mod_by_id(mod_id)
+            names = list(mod.dependencies) if mod else []
+
+        entries = list(self._library_entries)
+        activation = library_model.load_activation_state() if instance_id else self._activation
+        records = []
+        for name in names:
+            dependency = next((candidate for candidate in entries
+                               if candidate.mod_name.casefold() == name.casefold()), None)
+            records.append({
+                "name": (dependency.display_name or dependency.mod_name) if dependency else name,
+                "libraryId": dependency.library_id if dependency else "",
+                "available": dependency is not None,
+                "enabled": activation.is_enabled_for(
+                    dependency.library_id, instance_id or library_model.DEFAULT_INSTANCE_ID
+                ) if dependency else False,
+            })
+        return records
+
+    @Slot(str, bool, bool)
+    def setEnabledWithDependencies(self, mod_id: str, enabled: bool, include_dependencies: bool) -> None:
+        """Włącza wymagane mody z Biblioteki przed aktywacją moda głównego."""
+        if enabled and include_dependencies:
+            for dependency in self._dependency_records(mod_id):
+                dep_id = dependency["libraryId"]
+                if dependency["available"] and not dependency["enabled"] and dep_id:
+                    self.setEnabled(dep_id, True)
+        self.setEnabled(mod_id, enabled)
 
     def _notify_counts(self) -> None:
         self.countsChanged.emit()

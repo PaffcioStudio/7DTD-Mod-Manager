@@ -18,6 +18,22 @@ PageShell {
 
     property string pendingUninstallId: ""
     property string pendingUninstallName: ""
+    property string pendingDependencyModId: ""
+
+    function requestModToggle(modId, enabled) {
+        const details = Mods.modDetails(modId)
+        const unmet = (details.dependencies || []).filter(dep => !dep.available || !dep.enabled)
+        if (enabled && unmet.length > 0) {
+            pendingDependencyModId = modId
+            dependencyConfirm.askWithStatusItems(
+                I18n.t("instances.mods.dependenciesTitle"),
+                I18n.t("instances.mods.dependenciesMessage"),
+                details.dependencies || [],
+                I18n.t("instances.mods.enableDependencies"))
+            return
+        }
+        Mods.setEnabledWithDependencies(modId, enabled, false)
+    }
 
     // ------------------------------------------------------------------ #
     // dialogs
@@ -373,7 +389,7 @@ PageShell {
                         dragHandleVisible: modsPage.dndEnabled
 
                         onDetailsClicked: Bus.openMod(delegateRoot.modId)
-                        onToggleRequested: (enabled) => Mods.toggleMod(delegateRoot.modId)
+                        onToggleRequested: (enabled) => modsPage.requestModToggle(delegateRoot.modId, enabled)
                         onOpenFolderRequested: Mods.openFolder(delegateRoot.modId)
                         onUninstallRequested: {
                             modsPage.pendingUninstallId = delegateRoot.modId
@@ -429,5 +445,10 @@ PageShell {
     ConfirmModal {
         id: uninstallConfirm
         onConfirmed: Mods.uninstallMod(modsPage.pendingUninstallId)
+    }
+
+    ConfirmModal {
+        id: dependencyConfirm
+        onConfirmed: Mods.setEnabledWithDependencies(modsPage.pendingDependencyModId, true, true)
     }
 }
